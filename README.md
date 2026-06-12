@@ -183,7 +183,7 @@ CREATE TABLE operational_constraints (
     constraint_type VARCHAR(50) NOT NULL,  -- e.g., "LessThan", "InRange"
     parameters JSONB NOT NULL,             -- e.g., '{"threshold": 2.0}' or '{"min_val": 80, "max_val": 100}'
     
-    -- Ensure JSON structure matches the selected constraint_type
+    -- OPTIONAL: Ensure JSON structure matches the selected constraint_type
     CONSTRAINT check_parameter_integrity CHECK (
         (constraint_type = 'LessThan' AND parameters ? 'threshold') OR
         (constraint_type = 'GreaterThan' AND parameters ? 'threshold') OR
