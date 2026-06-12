@@ -30,7 +30,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/constraints"]
+packages = ["src/constraints", "src/satellite"]
 
 [tool.ruff]
 line-length = 88
