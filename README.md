@@ -154,30 +154,44 @@ Tasks are modeled via `SlewTask` and `ImagingTask` and routed through `validate_
 
 ---
 
-## 3. Database Configuration (Dynamic Constraints)
+## 3. Database Configuration & Before-Import Initialization
 
-In production satellite command and control systems, constraint thresholds (e.g. maximum slew speeds, temperature ranges) are frequently adjusted by mission operators. To avoid compiling new code for every operational change, constraints can be stored in a relational database (like PostgreSQL or SQLite) and loaded dynamically.
+In production spacecraft ground stations and operational centers, constraint thresholds (e.g., maximum slew speeds, cloud cover limits, minimum battery states) are stored in databases. This allows operators to adjust safety guidelines on a per-satellite or per-task basis without redeploying code.
+
+By combining a relational schema with **Before-Import Initialization**, we can load constraint values from a database at startup *before* importing the validation module. This allows you to retain the clean, declarative `@constrained` decorator syntax while fully representing each constraint dynamically in your database.
 
 ### A. Database Schema
-You can store constraints in a `constraints` table with a JSON column for arguments:
+In this database schema, we represent constraints using UUIDs and link each rule to a specific satellite (via its official `satellite_norad_id`) and a specific task definition (via `task_id`):
 
 ```sql
+CREATE TABLE satellites (
+    norad_id INT PRIMARY KEY,              -- official NORAD catalog ID
+    name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE task_definitions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL             -- e.g., "slew_to_poi" or "science_imaging"
+);
+
 CREATE TABLE operational_constraints (
-    id SERIAL PRIMARY KEY,
-    context_name VARCHAR(100) NOT NULL, -- e.g., "slew_task" or "charging_mode"
-    parameter_name VARCHAR(100) NOT NULL, -- e.g., "max_slew_speed" or "battery_charge_level"
-    constraint_type VARCHAR(50) NOT NULL, -- e.g., "LessThan", "InRange"
-    parameters JSONB NOT NULL             -- e.g., '{"threshold": 2.0}' or '{"min_val": 50, "max_val": 100}'
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    satellite_norad_id INT NOT NULL REFERENCES satellites(norad_id) ON DELETE CASCADE,
+    task_id UUID NOT NULL REFERENCES task_definitions(id) ON DELETE CASCADE,
+    context_name VARCHAR(100) NOT NULL,    -- e.g., "slew_task"
+    parameter_name VARCHAR(100) NOT NULL,  -- e.g., "max_slew_speed"
+    constraint_type VARCHAR(50) NOT NULL,  -- e.g., "LessThan", "InRange"
+    parameters JSONB NOT NULL              -- e.g., '{"threshold": 2.0}' or '{"min_val": 80, "max_val": 100}'
 );
 ```
 
-### B. Rule Registry & Deserialization
-In your validation engine, create a registry map that connects string keys from the database to the Python constraint classes:
+### B. Shared Rules Module (`rules.py`)
+At startup, query all active constraints for your target satellite and task, instantiate them into Python `Constraint` objects, and store them in an in-memory cache registry:
 
 ```python
+# src/satellite/rules.py
 from constraints import GreaterThan, LessThan, InRange, Length, MatchesPattern, Constraint
 
-# Map DB strings to Python classes
 CONSTRAINT_REGISTRY = {
     "GreaterThan": GreaterThan,
     "LessThan": LessThan,
@@ -186,124 +200,45 @@ CONSTRAINT_REGISTRY = {
     "MatchesPattern": MatchesPattern,
 }
 
+# In-memory dictionary cache of loaded constraints
+# Structure: { context_name: { parameter_name: constraint_object } }
+ACTIVE_CONSTRAINTS: dict[str, dict[str, Constraint]] = {}
+
 def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
-    """Instantiates a constraint object dynamically from DB data."""
-    constraint_class = CONSTRAINT_REGISTRY.get(constraint_type)
-    if not constraint_class:
-        raise ValueError(f"Unknown constraint type: {constraint_type}")
-    return constraint_class(**parameters)
-```
+    cls = CONSTRAINT_REGISTRY.get(constraint_type)
+    if not cls:
+        raise ValueError(f"Unknown constraint: {constraint_type}")
+    return cls(**parameters)
 
-### C. Dynamic Run-Time Validation
-Because decorators run at import-time, database-driven constraints are best checked in a validation loop inside your task manager before committing a command:
-
-```python
-from constraints import ConstraintValidationError
-
-def validate_task_against_db(task_type: str, task_payload: dict, db_connection):
-    """
-    Queries constraints for the given task context from the DB,
-    reconstructs the objects, and validates the task data at runtime.
-    """
-    # 1. Fetch rules from database (conceptual)
-    cursor = db_connection.cursor()
-    cursor.execute(
-        "SELECT parameter_name, constraint_type, parameters FROM operational_constraints WHERE context_name = %s",
-        (task_type,)
-    )
-    rules = cursor.fetchall()
-
-    # 2. Iterate and validate each constraint
-    for parameter_name, constraint_type, parameters in rules:
-        if parameter_name not in task_payload:
-            continue
-        
-        value = task_payload[parameter_name]
-        constraint = load_constraint(constraint_type, parameters)
-
-        # 3. Perform check
-        if not constraint.validate(value):
-            raise ConstraintValidationError(
-                parameter_name=parameter_name,
-                value=value,
-                constraint=constraint,
-                message=constraint.error_message(value)
-            )
-    return True
-```
-
-### D. Optimization: Caching Constraints at Startup
-Querying the database and instantiating constraint objects on every validation call adds latency. In hot loops or real-time control streams, you can fetch all constraints at application **startup**, instantiate them once, and cache them in memory:
-
-```python
-# In-memory registry cache of loaded constraints
-# Structure: { context_name: [(parameter_name, constraint_object), ...] }
-ACTIVE_CONSTRAINTS: dict[str, list[tuple[str, Constraint]]] = {}
-
-def initialize_constraints(db_connection):
-    """Fetches all constraints from DB and caches their initialized Python objects in memory."""
+def load_from_database(db_connection, norad_id: int, target_task_id: str):
+    """Fetches constraints from the DB matching this satellite and task, and caches them."""
     global ACTIVE_CONSTRAINTS
     cursor = db_connection.cursor()
-    cursor.execute("SELECT context_name, parameter_name, constraint_type, parameters FROM operational_constraints")
+    cursor.execute(
+        """
+        SELECT context_name, parameter_name, constraint_type, parameters 
+        FROM operational_constraints 
+        WHERE satellite_norad_id = ? AND task_id = ?
+        """,
+        (norad_id, target_task_id)
+    )
     
-    # Rebuild the cache dictionary
     temp_cache = {}
     for context, param, c_type, params in cursor.fetchall():
         constraint_obj = load_constraint(c_type, params)
         if context not in temp_cache:
-            temp_cache[context] = []
-        temp_cache[context].append((param, constraint_obj))
+            temp_cache[context] = {}
+        temp_cache[context][param] = constraint_obj
         
     ACTIVE_CONSTRAINTS = temp_cache
 
-def validate_task_optimized(task_type: str, task_payload: dict) -> bool:
-    """Validates the task using the pre-compiled in-memory constraint cache."""
-    rules = ACTIVE_CONSTRAINTS.get(task_type, [])
-    for parameter_name, constraint in rules:
-        if parameter_name not in task_payload:
-            continue
-        
-        value = task_payload[parameter_name]
-        if not constraint.validate(value):
-            raise ConstraintValidationError(
-                parameter_name=parameter_name,
-                value=value,
-                constraint=constraint,
-                message=constraint.error_message(value)
-            )
-    return True
+def get_rule(context: str, parameter: str) -> Constraint:
+    """Helper used in type annotations to fetch the preloaded constraint at import-time."""
+    return ACTIVE_CONSTRAINTS.get(context, {}).get(parameter)
 ```
 
-#### Why use this approach?
-1. **Performance**: Bypasses network and filesystem latency entirely during the verification phase. Checking constraints becomes a pure in-memory Python method call (taking nanoseconds instead of milliseconds).
-2. **Zero Object Instantiation Overhead**: You instantiate constraint objects exactly once when the application boots up.
-3. **Hot-Reloading**: If operators update rules in the database, you can dynamically update the active constraints in-memory without rebooting the system by simply re-running `initialize_constraints(db_connection)`.
-
-### E. Advanced: Before-Import Initialization (Retaining the Decorator Syntax)
-
-If you want to keep the clean, declarative `@constrained` decorator syntax in `validation.py` but still configure constraints from the database dynamically, you can use **Before-Import Initialization**. 
-
-Because Python type hints and decorators are executed at **import-time**, you can initialize the database configurations *before* importing the module containing your validated functions.
-
-#### 1. Define a Shared Config Module (`rules.py`)
-```python
-# src/satellite/rules.py
-from constraints import Constraint, LessThan, InRange
-
-# Global references for constraints (will be instantiated from DB on startup)
-MAX_SLEW_SPEED_LIMIT: Constraint = None
-BATTERY_CHARGE_RANGE: Constraint = None
-
-def load_from_database(db_connection):
-    global MAX_SLEW_SPEED_LIMIT, BATTERY_CHARGE_RANGE
-    # Fetch parameters from the database...
-    # For demonstration:
-    MAX_SLEW_SPEED_LIMIT = LessThan(db_slew_threshold)
-    BATTERY_CHARGE_RANGE = InRange(db_charge_min, 100.0)
-```
-
-#### 2. Declare Functions referencing the Config (`validation.py`)
-In your validation module, import the config module. When Python executes `@constrained` at import-time, it will resolve the current instantiated constraint values:
+### C. Declaring Validations (`validation.py`)
+Import the `rules` module and reference `rules.get_rule(...)` directly inside your `Annotated` type hints. When the module is imported, `@constrained` parses the signature and captures the preloaded constraints:
 
 ```python
 # src/satellite/validation.py
@@ -314,30 +249,43 @@ import satellite.rules as rules
 @constrained
 def validate_slew_task(
     poi_name: str,
-    # References the dynamic object instantiated during startup
-    max_slew_speed: Annotated[float, rules.MAX_SLEW_SPEED_LIMIT],
+    # Dynamically references the object loaded from the database during boot
+    max_slew_speed: Annotated[float, rules.get_rule("slew_task", "max_slew_speed")],
+    predicted_coverage: Annotated[float, rules.get_rule("slew_task", "predicted_coverage")],
 ) -> bool:
     return True
 ```
 
-#### 3. Initialize in Application Boot (`main.py`)
-Initialize your rules *before* importing your validation routines:
+### D. Application Startup & Execution (`main.py`)
+Run the initialization query matching your spacecraft and task *before* importing your validation functions:
 
 ```python
 # main.py
 import sqlite3
+import uuid
 import satellite.rules as rules
 
-# 1. Connect to database and load rules
-conn = sqlite3.connect("spacecraft.db")
-rules.load_from_database(conn)
+# 1. Choose target satellite (NORAD ID) and task (UUID)
+SAT_NORAD_ID = 25544  # ISS NORAD catalog ID
+SLEW_TASK_UUID = "e4a2d8d8-795a-4e2b-a01c-d762e84d4b1a"
 
-# 2. NOW import validation routines (which compiles the decorator with the loaded values)
+# 2. Connect to the DB and load constraints into memory
+conn = sqlite3.connect("spacecraft.db")
+rules.load_from_database(conn, SAT_NORAD_ID, SLEW_TASK_UUID)
+
+# 3. NOW import your validations (they will compile using the cached database configurations)
 from satellite.validation import validate_slew_task
 
-# 3. Call functions with fully active database-defined rules!
-validate_slew_task("POI-452", 1.2)
+# 4. Safely validate incoming payloads against DB-configured limits
+# This runs fully in-memory at nanosecond speeds!
+validate_slew_task("Sydney_POI", max_slew_speed=1.1, predicted_coverage=89.0)
 ```
+
+### E. Why use this combined approach?
+1. **Fully DB-Driven**: Every constraint is represented as a structured row in the database, enabling audit logging, operator overrides, and hot adjustments.
+2. **Pre-Filter by Spacecraft & Task**: You can maintain different thresholds for different satellites (e.g. an older satellite with degraded wheels might have a `LessThan(1.0)` slew limit, whereas a newer satellite has a `LessThan(3.0)` limit).
+3. **Declarative Decorator Syntax**: Functions maintain clean annotations and fail loudly with explicit validation errors if a task payload violates thresholds.
+4. **Optimal Performance**: Bypasses all runtime database queries. Once imported, checks run strictly in-memory.
 
 ---
 
