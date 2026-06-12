@@ -186,7 +186,7 @@ CREATE TABLE operational_constraints (
 ```
 
 ### B. Shared Rules Module (`rules.py`)
-At startup, query all active constraints for your target satellite and task, instantiate them into Python `Constraint` objects, and store them in an in-memory cache registry:
+At startup, query constraints for **all** satellites, instantiate them into Python `Constraint` objects, and store them in a nested dictionary cached by `satellite_norad_id`:
 
 ```python
 # src/satellite/rules.py
@@ -200,9 +200,8 @@ CONSTRAINT_REGISTRY = {
     "MatchesPattern": MatchesPattern,
 }
 
-# In-memory dictionary cache of loaded constraints
-# Structure: { context_name: { parameter_name: constraint_object } }
-ACTIVE_CONSTRAINTS: dict[str, dict[str, Constraint]] = {}
+# Nested cache: { satellite_norad_id: { context_name: { parameter_name: constraint_object } } }
+ACTIVE_CONSTRAINTS: dict[int, dict[str, dict[str, Constraint]]] = {}
 
 def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
     cls = CONSTRAINT_REGISTRY.get(constraint_type)
@@ -210,75 +209,85 @@ def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
         raise ValueError(f"Unknown constraint: {constraint_type}")
     return cls(**parameters)
 
-def load_from_database(db_connection, norad_id: int, target_task_id: str):
-    """Fetches constraints from the DB matching this satellite and task, and caches them."""
+def load_all_from_database(db_connection):
+    """Queries and compiles constraints for all active spacecraft from the DB."""
     global ACTIVE_CONSTRAINTS
     cursor = db_connection.cursor()
     cursor.execute(
         """
-        SELECT context_name, parameter_name, constraint_type, parameters 
-        FROM operational_constraints 
-        WHERE satellite_norad_id = ? AND task_id = ?
-        """,
-        (norad_id, target_task_id)
+        SELECT satellite_norad_id, context_name, parameter_name, constraint_type, parameters 
+        FROM operational_constraints
+        """
     )
     
     temp_cache = {}
-    for context, param, c_type, params in cursor.fetchall():
+    for norad_id, context, param, c_type, params in cursor.fetchall():
         constraint_obj = load_constraint(c_type, params)
-        if context not in temp_cache:
-            temp_cache[context] = {}
-        temp_cache[context][param] = constraint_obj
+        if norad_id not in temp_cache:
+            temp_cache[norad_id] = {}
+        if context not in temp_cache[norad_id]:
+            temp_cache[norad_id][context] = {}
+        temp_cache[norad_id][context][param] = constraint_obj
         
     ACTIVE_CONSTRAINTS = temp_cache
 
-def get_rule(context: str, parameter: str) -> Constraint:
-    """Helper used in type annotations to fetch the preloaded constraint at import-time."""
-    return ACTIVE_CONSTRAINTS.get(context, {}).get(parameter)
+def get_rule(norad_id: int, context: str, parameter: str) -> Constraint:
+    """Fetches the pre-compiled constraint for a specific satellite and context."""
+    return ACTIVE_CONSTRAINTS.get(norad_id, {}).get(context, {}).get(parameter)
 ```
 
 ### C. Declaring Validations (`validation.py`)
-Import the `rules` module and reference `rules.get_rule(...)` directly inside your `Annotated` type hints. When the module is imported, `@constrained` parses the signature and captures the preloaded constraints:
+To support multiple satellites concurrently, we compile validation functions inside a **closure generator**. This dynamically binds the target satellite's specific constraints into the function parameters at compilation time:
 
 ```python
 # src/satellite/validation.py
-from typing import Annotated
+from typing import Annotated, Callable
 from constraints import constrained
 import satellite.rules as rules
 
-@constrained
-def validate_slew_task(
-    poi_name: str,
-    # Dynamically references the object loaded from the database during boot
-    max_slew_speed: Annotated[float, rules.get_rule("slew_task", "max_slew_speed")],
-    predicted_coverage: Annotated[float, rules.get_rule("slew_task", "predicted_coverage")],
-) -> bool:
-    return True
+def make_slew_validator(norad_id: int) -> Callable[..., bool]:
+    """
+    Compiles and returns a decorated validation function bound to the 
+    specific constraints of the requested satellite (norad_id).
+    """
+    max_slew_speed_rule = rules.get_rule(norad_id, "slew_task", "max_slew_speed")
+    predicted_coverage_rule = rules.get_rule(norad_id, "slew_task", "predicted_coverage")
+
+    @constrained
+    def validate_slew_task(
+        poi_name: str,
+        # References the dynamic objects loaded for this specific spacecraft
+        max_slew_speed: Annotated[float, max_slew_speed_rule],
+        predicted_coverage: Annotated[float, predicted_coverage_rule],
+    ) -> bool:
+        return True
+
+    return validate_slew_task
 ```
 
 ### D. Application Startup & Execution (`main.py`)
-Run the initialization query matching your spacecraft and task *before* importing your validation functions:
+Initialize all constraints from the database once at boot. When telemetry or task commands arrive, get the validator for that specific satellite and execute the validation:
 
 ```python
 # main.py
 import sqlite3
-import uuid
 import satellite.rules as rules
+from satellite.validation import make_slew_validator
 
-# 1. Choose target satellite (NORAD ID) and task (UUID)
-SAT_NORAD_ID = 25544  # ISS NORAD catalog ID
-SLEW_TASK_UUID = "e4a2d8d8-795a-4e2b-a01c-d762e84d4b1a"
-
-# 2. Connect to the DB and load constraints into memory
+# 1. Connect to the DB and load constraints for all satellites into memory
 conn = sqlite3.connect("spacecraft.db")
-rules.load_from_database(conn, SAT_NORAD_ID, SLEW_TASK_UUID)
+rules.load_all_from_database(conn)
 
-# 3. NOW import your validations (they will compile using the cached database configurations)
-from satellite.validation import validate_slew_task
+# 2. Compile validators for individual satellites
+iss_slew_validator = make_slew_validator(25544)  # International Space Station
+hubble_slew_validator = make_slew_validator(20580)  # Hubble Space Telescope
 
-# 4. Safely validate incoming payloads against DB-configured limits
-# This runs fully in-memory at nanosecond speeds!
-validate_slew_task("Sydney_POI", max_slew_speed=1.1, predicted_coverage=89.0)
+# 3. Validate tasks against their respective spacecraft-specific rules concurrently!
+# ISS Slew: checked against ISS rules
+iss_slew_validator(poi_name="Sydney_POI", max_slew_speed=1.1, predicted_coverage=89.0)
+
+# Hubble Slew: checked against Hubble rules
+hubble_slew_validator(poi_name="Orion_Nebula", max_slew_speed=0.2, predicted_coverage=99.5)
 ```
 
 ### E. Why use this combined approach?
