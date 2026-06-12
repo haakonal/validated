@@ -7,7 +7,7 @@ from satellite.models import (
     CommsState,
     SatelliteTelemetry,
 )
-from satellite.validation import check_telemetry
+from satellite.validation import check_telemetry, validate_subsystem_diagnostics
 
 
 def print_header(title: str):
@@ -173,6 +173,40 @@ def main():
         comms=CommsState(ground_station_visible=True, signal_strength=-65.0),
     )
     run_scenario("Faulty ACS Reaction Wheel Speed DType", faulty_acs_dtype)
+
+    # 9. Selective validation demo (Full vs Type-only vs Bypassed)
+    print_header("Selective Validation Diagnostic Scenarios")
+    
+    # 9a. Successful case
+    try:
+        print("Running validate_subsystem_diagnostics('PWR-002', '12.4', {'voltage': 28.5})")
+        validate_subsystem_diagnostics("PWR-002", "12.4", {"voltage": 28.5})
+        print("RESULT: [PASS] All inputs validated and coerced successfully!")
+    except ConstraintValidationError as e:
+        print(f"RESULT: [FAIL] {e}")
+        
+    # 9b. Failing constraint check (Full validation parameter pattern mismatch)
+    print("-" * 80)
+    try:
+        print("Running validate_subsystem_diagnostics('INVALID-ID', 12.4, {'voltage': 28.5})")
+        validate_subsystem_diagnostics("INVALID-ID", 12.4, {"voltage": 28.5})
+    except ConstraintValidationError as e:
+        print(f"RESULT: [FAIL] Telemetry validation FAILED!")
+        print(f"  - Parameter in error: {e.parameter_name}")
+        print(f"  - Value received: {e.value!r}")
+        print(f"  - Violation details: {e.message}")
+
+    # 9c. Failing type coercion (Type-only validation parameter not a float)
+    print("-" * 80)
+    try:
+        print("Running validate_subsystem_diagnostics('PWR-002', 'not-a-float', {'voltage': 28.5})")
+        validate_subsystem_diagnostics("PWR-002", "not-a-float", {"voltage": 28.5})
+    except ConstraintValidationError as e:
+        print(f"RESULT: [FAIL] Telemetry validation FAILED!")
+        print(f"  - Parameter in error: {e.parameter_name}")
+        print(f"  - Value received: {e.value!r}")
+        print(f"  - Violation details: {e.message}")
+
 
 
 if __name__ == "__main__":

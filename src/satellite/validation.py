@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 import numpy as np
 from constraints import (
     constrained,
@@ -8,8 +8,10 @@ from constraints import (
     Check,
     Shape,
     DType,
+    MatchesPattern,
 )
 from satellite.models import SatelliteTelemetry
+
 
 # 1. Base function to check reaction wheel array shapes and types
 @constrained
@@ -84,4 +86,25 @@ def check_telemetry(telemetry: SatelliteTelemetry, max_battery_draw: float = 150
         )
     
     # Safe or default mode: no additional constraints
+    return True
+
+
+# 4. Example of selective validation levels (Full validation, Type-only, and No validation)
+@constrained
+def validate_subsystem_diagnostics(
+    # Full validation: coerced to str + matched against regex pattern
+    subsystem_id: Annotated[str, MatchesPattern(r"^(ACS|PWR|COM)-\d{3}$")],
+    
+    # Type-only validation: coerced to float, no value/range constraints checked
+    temperature_offset: float,
+    
+    # No validation: completely skipped (no type coercion, no checks)
+    raw_telemetry: Any,
+) -> bool:
+    """
+    Demonstrates the three different validation subsets:
+    - Full: type safety and custom constraints.
+    - Type-only: type safety via coercion, but no constraints.
+    - None: bypassed completely by the decorator.
+    """
     return True

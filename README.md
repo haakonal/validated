@@ -56,6 +56,28 @@ This is the core validation engine that implements the `@constrained` decorator.
 * **Design Decision**: *Why Pydantic TypeAdapter?*
   Instead of writing manual type checkers for floats, dicts, lists, and model definitions, Pydantic's underlying Rust validation engine handles extremely fast type coercion and validation. By separating coercion (type safety) from custom constraints (value safety), the code remains incredibly clean.
 
+### Selective Validation Levels
+
+The `@constrained` decorator supports three levels of validation on a parameter-by-parameter basis:
+
+1. **Full Validation (Type Coercion + Value Constraints)**:
+   Using `Annotated[Type, Constraint]`. The parameter is type-checked (and coerced if possible), then all associated constraints are validated.
+   ```python
+   # E.g. subsystem_id: Annotated[str, MatchesPattern(r"^(ACS|PWR|COM)-\d{3}$")]
+   ```
+2. **Type Validation Only (No Value Constraints)**:
+   Using a plain type hint (e.g., `float`). The parameter is type-checked and coerced, but no custom constraints are run.
+   ```python
+   # E.g. temperature_offset: float
+   ```
+3. **No Validation (Bypassed)**:
+   Using `Any` (or omitting annotations). The parameter is completely ignored by the decorator.
+   ```python
+   # E.g. raw_telemetry: Any
+   ```
+
+This is demonstrated in [src/satellite/validation.py](src/satellite/validation.py) via `validate_subsystem_diagnostics`.
+
 ---
 
 ## 2. The `satellite` Package & Subsystem Validation

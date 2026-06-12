@@ -5,7 +5,7 @@ from satellite.models import (
     CommsState,
     SatelliteTelemetry,
 )
-from satellite.validation import check_telemetry
+from satellite.validation import check_telemetry, validate_subsystem_diagnostics
 
 __all__ = [
     "BatteryState",
@@ -14,4 +14,5 @@ __all__ = [
     "CommsState",
     "SatelliteTelemetry",
     "check_telemetry",
+    "validate_subsystem_diagnostics",
 ]

@@ -8,7 +8,7 @@ from satellite.models import (
     CommsState,
     SatelliteTelemetry,
 )
-from satellite.validation import check_telemetry
+from satellite.validation import check_telemetry, validate_subsystem_diagnostics
 
 
 def test_valid_charging_mode():
@@ -170,3 +170,26 @@ def test_acs_numpy_constraints():
         check_telemetry(telemetry)
     assert excinfo.value.parameter_name == "wheel_speeds"
     assert "does not match expected dtype" in excinfo.value.message
+
+
+def test_selective_validation():
+    # 1. Valid inputs (with coercion)
+    # "ACS-101" is matched to pattern; "25" is coerced to float; raw_telemetry is Any
+    assert validate_subsystem_diagnostics("ACS-101", "25", {"some": "data"}) is True
+
+    # 2. Invalid inputs on full validation parameter (pattern mismatch)
+    with pytest.raises(ConstraintValidationError) as excinfo:
+        validate_subsystem_diagnostics("ACS-INVALID", 25.0, "ignored")
+    assert excinfo.value.parameter_name == "subsystem_id"
+    assert "must match pattern" in excinfo.value.message
+
+    # 3. Invalid inputs on type-only validation parameter (not coercible to float)
+    with pytest.raises(ConstraintValidationError) as excinfo:
+        validate_subsystem_diagnostics("ACS-101", "not-a-float", "ignored")
+    assert excinfo.value.parameter_name == "temperature_offset"
+    assert "type validation failed" in excinfo.value.message
+
+    # 4. Any input on unvalidated parameter (even completely invalid type/data)
+    assert validate_subsystem_diagnostics("ACS-101", 25.0, None) is True
+    assert validate_subsystem_diagnostics("ACS-101", 25.0, 12345) is True
+
