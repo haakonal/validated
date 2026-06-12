@@ -2,6 +2,7 @@ from constraints.decorator import constrained
 from constraints.exceptions import ConstraintValidationError
 from constraints.models import (
     Constraint,
+    ConstraintCheckError,
     GreaterThan,
     LessThan,
     InRange,
@@ -15,6 +16,7 @@ from constraints.models import (
 __all__ = [
     "constrained",
     "Constraint",
+    "ConstraintCheckError",
     "GreaterThan",
     "LessThan",
     "InRange",

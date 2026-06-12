@@ -1,11 +1,15 @@
 import re
+from abc import ABC, abstractmethod
 from typing import Any, Callable, Sequence
 import numpy as np
 
-class Constraint:
+
+class Constraint(ABC):
     """Base class for all constraints."""
+
+    @abstractmethod
     def validate(self, value: Any) -> bool:
-        raise NotImplementedError
+        ...
 
     def error_message(self, value: Any) -> str:
         return f"Value {value!r} does not satisfy {self.__class__.__name__}"
@@ -21,6 +25,12 @@ class GreaterThan(Constraint):
     def error_message(self, value: Any) -> str:
         return f"must be greater than {self.threshold}"
 
+    def __repr__(self) -> str:
+        return f"GreaterThan(threshold={self.threshold!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, GreaterThan) and self.threshold == other.threshold
+
 
 class LessThan(Constraint):
     def __init__(self, threshold: Any):
@@ -31,6 +41,12 @@ class LessThan(Constraint):
 
     def error_message(self, value: Any) -> str:
         return f"must be less than {self.threshold}"
+
+    def __repr__(self) -> str:
+        return f"LessThan(threshold={self.threshold!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, LessThan) and self.threshold == other.threshold
 
 
 class InRange(Constraint):
@@ -43,6 +59,12 @@ class InRange(Constraint):
 
     def error_message(self, value: Any) -> str:
         return f"must be in range [{self.min_val}, {self.max_val}]"
+
+    def __repr__(self) -> str:
+        return f"InRange(min_val={self.min_val!r}, max_val={self.max_val!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, InRange) and self.min_val == other.min_val and self.max_val == other.max_val
 
 
 class Length(Constraint):
@@ -70,6 +92,12 @@ class Length(Constraint):
             return f"length must be at most {self.max_len}"
         return "invalid length"
 
+    def __repr__(self) -> str:
+        return f"Length(min_len={self.min_len!r}, max_len={self.max_len!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Length) and self.min_len == other.min_len and self.max_len == other.max_len
+
 
 class MatchesPattern(Constraint):
     def __init__(self, pattern: str | re.Pattern[str]):
@@ -81,10 +109,16 @@ class MatchesPattern(Constraint):
     def validate(self, value: Any) -> bool:
         if not isinstance(value, str):
             return False
-        return bool(self.regex.match(value))
+        return bool(self.regex.fullmatch(value))
 
     def error_message(self, value: Any) -> str:
         return f"must match pattern {self.regex.pattern}"
+
+    def __repr__(self) -> str:
+        return f"MatchesPattern(pattern={self.regex.pattern!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, MatchesPattern) and self.regex.pattern == other.regex.pattern
 
 
 class Check(Constraint):
@@ -95,11 +129,28 @@ class Check(Constraint):
     def validate(self, value: Any) -> bool:
         try:
             return bool(self.predicate(value))
-        except Exception:
-            return False
+        except Exception as exc:
+            raise ConstraintCheckError(
+                f"Predicate '{self.description}' raised {type(exc).__name__}: {exc}",
+                original_exception=exc,
+            ) from exc
 
     def error_message(self, value: Any) -> str:
         return f"must satisfy custom check: {self.description}"
+
+    def __repr__(self) -> str:
+        return f"Check(description={self.description!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Check) and self.predicate is other.predicate and self.description == other.description
+
+
+class ConstraintCheckError(Exception):
+    """Raised when a Check predicate itself throws an exception during evaluation."""
+
+    def __init__(self, message: str, original_exception: Exception):
+        super().__init__(message)
+        self.original_exception = original_exception
 
 
 class Shape(Constraint):
@@ -132,6 +183,12 @@ class Shape(Constraint):
             return "value is not a NumPy array"
         return f"array shape {value.shape} does not match expected shape {self.dims}"
 
+    def __repr__(self) -> str:
+        return f"Shape(dims={self.dims!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Shape) and self.dims == other.dims
+
 
 class DType(Constraint):
     def __init__(self, dtype: Any):
@@ -146,3 +203,9 @@ class DType(Constraint):
         if not isinstance(value, np.ndarray):
             return "value is not a NumPy array"
         return f"array dtype {value.dtype} does not match expected dtype {self.expected_dtype}"
+
+    def __repr__(self) -> str:
+        return f"DType(dtype={self.expected_dtype!r})"
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, DType) and self.expected_dtype == other.expected_dtype
