@@ -36,7 +36,7 @@ CREATE TABLE operational_constraints (
 
 ---
 
-### Approach B: Concrete Table-per-Type (Schema-Strict Style)
+## 2. Approach B: Concrete Table-per-Type (Schema-Strict Style)
 Each constraint class gets its own table containing columns matched specifically to its validation criteria.
 
 ```sql
@@ -69,7 +69,7 @@ CREATE TABLE in_range_constraints (
 
 ---
 
-## 2. Head-to-Head Comparison
+## 3. Head-to-Head Comparison
 
 | Attribute | Single Polymorphic Table (Document) | Concrete Table-per-Type (Schema-Strict) |
 | :--- | :--- | :--- |
@@ -81,7 +81,7 @@ CREATE TABLE in_range_constraints (
 
 ---
 
-## 3. Rationale: Why We Chose the Document Style
+## 4. Rationale: Why We Chose the Document Style
 
 For spacecraft flight rules, **the Single Polymorphic Table (Document Style)** was chosen for three key architectural reasons:
 
@@ -103,3 +103,49 @@ We can achieve "the best of both worlds" by combining JSON serialization with st
   );
   ```
 * **Pydantic Validation**: When loading rules at startup, the parameters are unpacked and validated by Pydantic constraint classes. Any typo in the database config is caught and rejected immediately on application boot, preventing invalid rules from entering the validation engine.
+
+---
+
+## 5. Serializing the `Check` (Predicate) Constraint Safely
+
+The `Check` constraint accepts a Python `Callable` (predicate) e.g. `lambda x: x is True`. Since we cannot safely store raw Python code or lambdas directly in a database due to **Remote Code Execution (RCE) vulnerabilities** (avoiding functions like `eval()` or `pickle`), we represent predicates using a **Named Predicate Registry**.
+
+### Step 1: Define the Database Representation
+In the database, the `Check` constraint is stored by referencing a unique string identifier (`predicate_key`) rather than code:
+
+* **`constraint_type`**: `"Check"`
+* **`parameters`**: `{"predicate_key": "all_panels_deployed", "description": "Verify all solar panels are deployed"}`
+
+### Step 2: Implement the Predicate Registry in Code
+Map the unique keys to safe, pre-defined Python functions:
+
+```python
+# src/satellite/rules.py
+from constraints import Check
+
+# Registry of safe, pre-defined custom checks
+PREDICATE_REGISTRY = {
+    "all_panels_deployed": lambda panels: all(p.deployed for p in panels),
+    "battery_is_charging": lambda status: status == "charging",
+    "ground_station_visible": lambda visible: visible is True,
+    "is_even": lambda val: val % 2 == 0,
+}
+
+# Add Check to the deserialization routine
+def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
+    if constraint_type == "Check":
+        pred_key = parameters.get("predicate_key")
+        description = parameters.get("description")
+        
+        predicate = PREDICATE_REGISTRY.get(pred_key)
+        if not predicate:
+            raise ValueError(f"Unknown predicate key: {pred_key}")
+            
+        return Check(predicate, description)
+        
+    # Standard numerical/pattern deserialization follows...
+    cls = CONSTRAINT_REGISTRY.get(constraint_type)
+    return cls(**parameters)
+```
+
+By storing a string identifier, the database remains language-agnostic, secure, and easily auditable, while the validation logic remains safe inside compiled Python files.
