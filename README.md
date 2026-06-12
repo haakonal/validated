@@ -136,6 +136,22 @@ During science observations, requirements change:
 3. The thermal subsystem must keep the batteries between `-10` and `40` degrees Celsius.
 4. Current draw cannot exceed the safe battery limit (verified using a `power_margin > 0` constraint).
 
+#### D. Pre-Commit Task Safety Checking
+Before committing a planned spacecraft task (e.g., targeting a Point of Interest), we run pre-commit validations to prevent execution of rules that violate satellite thresholds (such as excessive slew speeds which could desaturate reaction wheels, or insufficient coverage):
+
+```python
+# From src/satellite/validation.py
+@constrained
+def validate_slew_task(
+    poi_name: Annotated[str, Length(min_len=1)],
+    max_slew_speed: Annotated[float, LessThan(2.0)],             # Slew speed limit: 2.0 deg/s
+    predicted_coverage: Annotated[float, InRange(80.0, 100.0)],  # Min coverage requirement: 80%
+) -> bool:
+    return True
+```
+
+Tasks are modeled via `SlewTask` and `ImagingTask` and routed through `validate_task()`.
+
 ---
 
 ## 3. How to Run & Verify the Code

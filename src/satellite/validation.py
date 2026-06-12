@@ -9,8 +9,9 @@ from constraints import (
     Shape,
     DType,
     MatchesPattern,
+    Length,
 )
-from satellite.models import SatelliteTelemetry
+from satellite.models import SatelliteTelemetry, SlewTask, ImagingTask
 
 
 # 1. Base function to check reaction wheel array shapes and types
@@ -108,3 +109,46 @@ def validate_subsystem_diagnostics(
     - None: bypassed completely by the decorator.
     """
     return True
+
+
+# 5. Slew Task pre-commit validation
+@constrained
+def validate_slew_task(
+    poi_name: Annotated[str, Length(min_len=1)],
+    max_slew_speed: Annotated[float, LessThan(2.0)], # Max 2 deg/s speed
+    predicted_coverage: Annotated[float, InRange(80.0, 100.0)], # Min 80% coverage
+) -> bool:
+    return True
+
+
+# 6. Imaging Task pre-commit validation
+@constrained
+def validate_imaging_task(
+    target_poi: Annotated[str, Length(min_len=1)],
+    exposure_time: Annotated[float, InRange(0.01, 5.0)], # 10ms to 5s
+    cloud_cover_limit: Annotated[float, LessThan(20.0)], # Max 20% cloud cover
+    spectral_bands: Annotated[list[str], Length(min_len=1, max_len=5)], # 1 to 5 bands
+) -> bool:
+    return True
+
+
+# 7. Unified entry point for task safety checking
+def validate_task(task: SlewTask | ImagingTask) -> bool:
+    """
+    Validates a task before it is committed to the spacecraft command queue.
+    """
+    if isinstance(task, SlewTask):
+        return validate_slew_task(
+            poi_name=task.poi_name,
+            max_slew_speed=task.max_predicted_slew_speed,
+            predicted_coverage=task.predicted_coverage,
+        )
+    elif isinstance(task, ImagingTask):
+        return validate_imaging_task(
+            target_poi=task.target_poi,
+            exposure_time=task.exposure_time,
+            cloud_cover_limit=task.cloud_cover_limit,
+            spectral_bands=task.spectral_bands,
+        )
+    raise ValueError(f"Unknown task type: {type(task)}")
+

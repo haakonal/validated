@@ -33,3 +33,20 @@ class SatelliteTelemetry(BaseModel):
     panels: list[SolarPanelState]
     acs: ACSState
     comms: CommsState
+
+
+class SlewTask(BaseModel):
+    poi_name: str
+    target_yaw: float
+    target_pitch: float
+    duration_seconds: float
+    max_predicted_slew_speed: float  # deg/s
+    predicted_coverage: float        # percentage, 0.0 to 100.0
+
+
+class ImagingTask(BaseModel):
+    target_poi: str
+    exposure_time: float             # seconds
+    cloud_cover_limit: float         # percentage, 0.0 to 100.0
+    spectral_bands: list[str]
+

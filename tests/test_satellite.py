@@ -7,8 +7,14 @@ from satellite.models import (
     ACSState,
     CommsState,
     SatelliteTelemetry,
+    SlewTask,
+    ImagingTask,
 )
-from satellite.validation import check_telemetry, validate_subsystem_diagnostics
+from satellite.validation import (
+    check_telemetry,
+    validate_subsystem_diagnostics,
+    validate_task,
+)
 
 
 def test_valid_charging_mode():
@@ -192,4 +198,67 @@ def test_selective_validation():
     # 4. Any input on unvalidated parameter (even completely invalid type/data)
     assert validate_subsystem_diagnostics("ACS-101", 25.0, None) is True
     assert validate_subsystem_diagnostics("ACS-101", 25.0, 12345) is True
+
+
+def test_task_validation():
+    # 1. Valid Slew Task
+    valid_slew = SlewTask(
+        poi_name="Paris_Observation",
+        target_yaw=12.5,
+        target_pitch=-45.0,
+        duration_seconds=30.0,
+        max_predicted_slew_speed=1.5,  # 1.5 < 2.0
+        predicted_coverage=92.5,       # 92.5 in [80.0, 100.0]
+    )
+    assert validate_task(valid_slew) is True
+
+    # 2. Slew Task with exceeded slew speed
+    fast_slew = SlewTask(
+        poi_name="Paris_Observation",
+        target_yaw=12.5,
+        target_pitch=-45.0,
+        duration_seconds=30.0,
+        max_predicted_slew_speed=2.5,  # 2.5 > 2.0! (Violates LessThan(2.0))
+        predicted_coverage=92.5,
+    )
+    with pytest.raises(ConstraintValidationError) as excinfo:
+        validate_task(fast_slew)
+    assert excinfo.value.parameter_name == "max_slew_speed"
+    assert "must be less than 2.0" in excinfo.value.message
+
+    # 3. Slew Task with poor coverage
+    poor_coverage_slew = SlewTask(
+        poi_name="Paris_Observation",
+        target_yaw=12.5,
+        target_pitch=-45.0,
+        duration_seconds=30.0,
+        max_predicted_slew_speed=1.5,
+        predicted_coverage=75.0,       # 75.0 < 80.0! (Violates InRange(80.0, 100.0))
+    )
+    with pytest.raises(ConstraintValidationError) as excinfo:
+        validate_task(poor_coverage_slew)
+    assert excinfo.value.parameter_name == "predicted_coverage"
+    assert "must be in range [80.0, 100.0]" in excinfo.value.message
+
+    # 4. Valid Imaging Task
+    valid_imaging = ImagingTask(
+        target_poi="London_POI",
+        exposure_time=1.2,             # in [0.01, 5.0]
+        cloud_cover_limit=15.0,        # < 20.0
+        spectral_bands=["Red", "Green", "Blue", "NIR"],  # length 4, in [1, 5]
+    )
+    assert validate_task(valid_imaging) is True
+
+    # 5. Imaging Task with too many spectral bands
+    too_many_bands_imaging = ImagingTask(
+        target_poi="London_POI",
+        exposure_time=1.2,
+        cloud_cover_limit=15.0,
+        spectral_bands=["Band1", "Band2", "Band3", "Band4", "Band5", "Band6"],  # 6 bands > 5!
+    )
+    with pytest.raises(ConstraintValidationError) as excinfo:
+        validate_task(too_many_bands_imaging)
+    assert excinfo.value.parameter_name == "spectral_bands"
+    assert "length must be between 1 and 5" in excinfo.value.message
+
 

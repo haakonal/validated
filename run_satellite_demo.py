@@ -6,8 +6,14 @@ from satellite.models import (
     ACSState,
     CommsState,
     SatelliteTelemetry,
+    SlewTask,
+    ImagingTask,
 )
-from satellite.validation import check_telemetry, validate_subsystem_diagnostics
+from satellite.validation import (
+    check_telemetry,
+    validate_subsystem_diagnostics,
+    validate_task,
+)
 
 
 def print_header(title: str):
@@ -206,6 +212,64 @@ def main():
         print(f"  - Parameter in error: {e.parameter_name}")
         print(f"  - Value received: {e.value!r}")
         print(f"  - Violation details: {e.message}")
+
+    # 10. Pre-Commit Task Validation Demo (Slew speed and Coverage constraints)
+    print_header("Pre-Commit Task Validation Scenarios")
+    
+    # 10a. Successful Slew Task
+    slew_ok = SlewTask(
+        poi_name="Sydney_Station",
+        target_yaw=45.2,
+        target_pitch=-10.5,
+        duration_seconds=15.0,
+        max_predicted_slew_speed=1.2, # 1.2 deg/s < 2.0 limit
+        predicted_coverage=88.5,      # 88.5% in [80.0, 100.0]
+    )
+    try:
+        print(f"Validating SlewTask to {slew_ok.poi_name} (speed={slew_ok.max_predicted_slew_speed} deg/s, coverage={slew_ok.predicted_coverage}%)")
+        validate_task(slew_ok)
+        print("RESULT: [PASS] Slew task passes pre-commit checks! Ready to upload to command queue.")
+    except ConstraintValidationError as e:
+        print(f"RESULT: [FAIL] Slew task rejected: {e}")
+
+    # 10b. Slew Task exceeding speed limit
+    print("-" * 80)
+    slew_too_fast = SlewTask(
+        poi_name="Sydney_Station",
+        target_yaw=45.2,
+        target_pitch=-10.5,
+        duration_seconds=5.0,
+        max_predicted_slew_speed=3.1, # 3.1 deg/s > 2.0 limit!
+        predicted_coverage=95.0,
+    )
+    try:
+        print(f"Validating SlewTask to {slew_too_fast.poi_name} (speed={slew_too_fast.max_predicted_slew_speed} deg/s, coverage={slew_too_fast.predicted_coverage}%)")
+        validate_task(slew_too_fast)
+    except ConstraintValidationError as e:
+        print("RESULT: [FAIL] Slew task REJECTED! Violation of safety threshold.")
+        print(f"  - Safety rule violated: {e.parameter_name}")
+        print(f"  - Value received: {e.value!r}")
+        print(f"  - Constraint message: {e.message}")
+
+    # 10c. Slew Task with poor coverage
+    print("-" * 80)
+    slew_low_coverage = SlewTask(
+        poi_name="Sydney_Station",
+        target_yaw=45.2,
+        target_pitch=-10.5,
+        duration_seconds=20.0,
+        max_predicted_slew_speed=0.8,
+        predicted_coverage=71.2,      # 71.2% < 80.0% min required!
+    )
+    try:
+        print(f"Validating SlewTask to {slew_low_coverage.poi_name} (speed={slew_low_coverage.max_predicted_slew_speed} deg/s, coverage={slew_low_coverage.predicted_coverage}%)")
+        validate_task(slew_low_coverage)
+    except ConstraintValidationError as e:
+        print("RESULT: [FAIL] Slew task REJECTED! Violation of safety threshold.")
+        print(f"  - Safety rule violated: {e.parameter_name}")
+        print(f"  - Value received: {e.value!r}")
+        print(f"  - Constraint message: {e.message}")
+
 
 
 
