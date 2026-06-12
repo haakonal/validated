@@ -99,7 +99,13 @@ We can achieve "the best of both worlds" by combining JSON serialization with st
   ALTER TABLE operational_constraints
   ADD CONSTRAINT check_parameter_integrity CHECK (
       (constraint_type = 'LessThan' AND parameters ? 'threshold') OR
-      (constraint_type = 'InRange' AND parameters ? 'min_val' AND parameters ? 'max_val')
+      (constraint_type = 'GreaterThan' AND parameters ? 'threshold') OR
+      (constraint_type = 'InRange' AND parameters ? 'min_val' AND parameters ? 'max_val') OR
+      (constraint_type = 'Length' AND (parameters ? 'min_len' OR parameters ? 'max_len')) OR
+      (constraint_type = 'MatchesPattern' AND parameters ? 'pattern') OR
+      (constraint_type = 'Check' AND parameters ? 'predicate_key') OR
+      (constraint_type = 'Shape' AND parameters ? 'dims') OR
+      (constraint_type = 'DType' AND parameters ? 'dtype')
   );
   ```
 * **Pydantic Validation**: When loading rules at startup, the parameters are unpacked and validated by Pydantic constraint classes. Any typo in the database config is caught and rejected immediately on application boot, preventing invalid rules from entering the validation engine.
@@ -149,3 +155,42 @@ def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
 ```
 
 By storing a string identifier, the database remains language-agnostic, secure, and easily auditable, while the validation logic remains safe inside compiled Python files.
+
+---
+
+## 6. Database Payloads for All Constraint Models
+
+Here is the complete reference of how each of the 8 constraint types in the `constraints` library maps to the JSON `parameters` column in the database:
+
+### 1. `GreaterThan`
+* **Python Representation**: `GreaterThan(threshold=0.0)`
+* **Database JSON**: `{"threshold": 0.0}`
+
+### 2. `LessThan`
+* **Python Representation**: `LessThan(threshold=2.0)`
+* **Database JSON**: `{"threshold": 2.0}`
+
+### 3. `InRange`
+* **Python Representation**: `InRange(min_val=-10.0, max_val=40.0)`
+* **Database JSON**: `{"min_val": -10.0, "max_val": 40.0}`
+
+### 4. `Length`
+* **Python Representation**: `Length(min_len=1, max_len=5)`
+* **Database JSON**: `{"min_len": 1, "max_len": 5}` (Either key can be omitted if only enforcing a minimum or maximum boundary)
+
+### 5. `MatchesPattern`
+* **Python Representation**: `MatchesPattern(pattern=r"^(ACS|PWR|COM)-\d{3}$")`
+* **Database JSON**: `{"pattern": "^(ACS|PWR|COM)-\\\\d{3}$"}`
+
+### 6. `Check` (Custom Predicates)
+* **Python Representation**: `Check(predicate=PREDICATE_REGISTRY["is_even"], description="must be even")`
+* **Database JSON**: `{"predicate_key": "is_even", "description": "must be even"}`
+
+### 7. `Shape` (NumPy Array Dimensions)
+* **Python Representation**: `Shape(None, 3)` or `Shape(3)`
+* **Database JSON**: `{"dims": [null, 3]}` or `{"dims": [3]}` (Wildcard dimensions are represented as `null`, `*`, or `-1`)
+
+### 8. `DType` (NumPy Array Data Type)
+* **Python Representation**: `DType("float64")`
+* **Database JSON**: `{"dtype": "float64"}`
+

@@ -189,7 +189,10 @@ CREATE TABLE operational_constraints (
         (constraint_type = 'GreaterThan' AND parameters ? 'threshold') OR
         (constraint_type = 'InRange' AND parameters ? 'min_val' AND parameters ? 'max_val') OR
         (constraint_type = 'Length' AND (parameters ? 'min_len' OR parameters ? 'max_len')) OR
-        (constraint_type = 'MatchesPattern' AND parameters ? 'pattern')
+        (constraint_type = 'MatchesPattern' AND parameters ? 'pattern') OR
+        (constraint_type = 'Check' AND parameters ? 'predicate_key') OR
+        (constraint_type = 'Shape' AND parameters ? 'dims') OR
+        (constraint_type = 'DType' AND parameters ? 'dtype')
     )
 );
 ```
@@ -199,7 +202,25 @@ At startup, query constraints for **all** satellites, instantiate them into Pyth
 
 ```python
 # src/satellite/rules.py
-from constraints import GreaterThan, LessThan, InRange, Length, MatchesPattern, Constraint
+from constraints import (
+    GreaterThan,
+    LessThan,
+    InRange,
+    Length,
+    MatchesPattern,
+    Check,
+    Shape,
+    DType,
+    Constraint,
+)
+
+# Registry of safe, pre-defined custom checks
+PREDICATE_REGISTRY = {
+    "all_panels_deployed": lambda panels: all(p.deployed for p in panels),
+    "battery_is_charging": lambda status: status == "charging",
+    "ground_station_visible": lambda visible: visible is True,
+    "is_even": lambda val: val % 2 == 0,
+}
 
 CONSTRAINT_REGISTRY = {
     "GreaterThan": GreaterThan,
@@ -207,16 +228,27 @@ CONSTRAINT_REGISTRY = {
     "InRange": InRange,
     "Length": Length,
     "MatchesPattern": MatchesPattern,
+    "Shape": Shape,
+    "DType": DType,
 }
 
 # Nested cache: { satellite_norad_id: { context_name: { parameter_name: constraint_object } } }
 ACTIVE_CONSTRAINTS: dict[int, dict[str, dict[str, Constraint]]] = {}
 
 def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
+    if constraint_type == "Check":
+        pred_key = parameters.get("predicate_key")
+        description = parameters.get("description")
+        predicate = PREDICATE_REGISTRY.get(pred_key)
+        if not predicate:
+            raise ValueError(f"Unknown predicate key: {pred_key}")
+        return Check(predicate, description)
+
     cls = CONSTRAINT_REGISTRY.get(constraint_type)
     if not cls:
         raise ValueError(f"Unknown constraint: {constraint_type}")
     return cls(**parameters)
+
 
 def load_all_from_database(db_connection):
     """Queries and compiles constraints for all active spacecraft from the DB."""
