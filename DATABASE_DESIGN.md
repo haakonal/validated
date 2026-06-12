@@ -131,17 +131,25 @@ Looks up "is_true" in PREDICATE_REGISTRY -> lambda x: x is True
 Check(lambda x: x is True, "must be visible")
 ```
 
-### Implementing the Registry in Code
+### Supporting Parameterized Predicates (Operator Adjustments)
+Operators often need to customize calculation parameters dynamically (e.g. checking if a calculated value exceeds a threshold, like `slew_speed * multiplier + offset < limit`). 
+
+To support this safely without database RCE risks, you map the `predicate_key` to a **Factory Function** in Python that receives the database JSON parameters and returns a custom-configured lambda:
+
 ```python
 # src/satellite/rules.py
 from constraints import Check
 
-# Registry of safe, pre-defined custom checks
-PREDICATE_REGISTRY = {
-    "all_panels_deployed": lambda panels: all(p.deployed for p in panels),
-    "battery_is_charging": lambda status: status == "charging",
-    "ground_station_visible": lambda visible: visible is True,
-    "is_even": lambda val: val % 2 == 0,
+# Parameterized predicate factories
+PREDICATE_FACTORIES = {
+    # Expects JSON parameters: {"multiplier": 1.5, "limit": 2.0}
+    "slew_thermal_calculation": lambda params: (
+        lambda speed: speed * params.get("multiplier", 1.0) < params.get("limit", 2.0)
+    ),
+    
+    # Static predicates
+    "all_panels_deployed": lambda params: (lambda panels: all(p.deployed for p in panels)),
+    "battery_is_charging": lambda params: (lambda status: status == "charging"),
 }
 
 def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
@@ -149,10 +157,12 @@ def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
         pred_key = parameters.get("predicate_key")
         description = parameters.get("description")
         
-        predicate = PREDICATE_REGISTRY.get(pred_key)
-        if not predicate:
+        # Resolve the predicate factory using the parameters JSON row
+        factory = PREDICATE_FACTORIES.get(pred_key)
+        if not factory:
             raise ValueError(f"Unknown predicate key: {pred_key}")
             
+        predicate = factory(parameters) # Generates the custom lambda securely!
         return Check(predicate, description)
         
     cls = CONSTRAINT_REGISTRY.get(constraint_type)
@@ -214,3 +224,85 @@ Here is the complete reference of how each of the 8 constraint types in the `con
 ### 8. `DType` (NumPy Array Data Type)
 * **Python Representation**: `DType("float64")`
 * **Database JSON**: `{"dtype": "float64"}`
+
+---
+
+## 8. Runtime Hot-Reloading in Docker (Proxy Constraint Pattern)
+
+A major limitation of the **Before-Import Initialization** pattern is that Python decorators evaluate annotations exactly **once** (at import-time). 
+
+If your application is running inside a Docker container, modifying thresholds in the database will have **no effect** on the compiled functions unless you reboot the container/process. 
+
+To support real-time **hot-reloading without restarts**, we can implement a **Proxy Constraint Pattern**. Instead of binding the concrete database constraint to the decorator statically, we bind a static `Proxy` constraint that queries our in-memory cache dynamically on every execution call.
+
+```
+[ validate_slew_task() called ]
+              │
+              ▼ (decorator triggers check)
+[ ProxyConstraint.validate(value) ]
+              │
+              ▼ (looks up current version)
+[ Fetch rules.get_rule(norad_id, context, param) ] ── (Can be updated live in memory!)
+              │
+              ▼ (delegates check)
+[ LessThan(2.5).validate(value) ]
+```
+
+### Step 1: Implement the `ProxyConstraint` Class
+```python
+# src/constraints/models.py or src/satellite/rules.py
+class ProxyConstraint(Constraint):
+    def __init__(self, context_name: str, parameter_name: str, get_active_sat_id_fn):
+        self.context_name = context_name
+        self.parameter_name = parameter_name
+        self.get_active_sat_id_fn = get_active_sat_id_fn
+
+    def _get_active_constraint(self) -> Constraint:
+        # 1. Fetch current active spacecraft ID from thread/execution context
+        norad_id = self.get_active_sat_id_fn()
+        # 2. Fetch the active compiled constraint object from the memory cache
+        rule = rules.get_rule(norad_id, self.context_name, self.parameter_name)
+        if not rule:
+            raise ValueError(f"No active constraint configured for {norad_id}:{self.context_name}:{self.parameter_name}")
+        return rule
+
+    def validate(self, value: Any) -> bool:
+        return self._get_active_constraint().validate(value)
+
+    def error_message(self, value: Any) -> str:
+        return self._get_active_constraint().error_message(value)
+```
+
+### Step 2: Annotate Functions statically using Proxies
+Because the proxy object itself is created once at class import-time, the decorator signature remains static, but the checks are fully dynamic:
+
+```python
+# src/satellite/validation.py
+import contextvars
+from typing import Annotated
+from constraints import constrained
+
+# ContextVar tracking active satellite ID in the current execution thread
+active_sat_id = contextvars.ContextVar("active_sat_id")
+
+# Static proxies pointing to dynamic lookups
+slew_speed_proxy = ProxyConstraint("slew_task", "max_slew_speed", active_sat_id.get)
+
+@constrained
+def validate_slew_task(
+    poi_name: str,
+    max_slew_speed: Annotated[float, slew_speed_proxy],
+) -> bool:
+    return True
+```
+
+### Step 3: Hot-Reloading Live in Memory
+When operators change database thresholds, the API triggers a refresh to update the `rules.ACTIVE_CONSTRAINTS` dictionary in memory:
+
+```python
+def on_database_update_event(db_connection):
+    """Event handler triggered when database rules change. Zero downtime, zero restarts."""
+    # Re-fetches database rows and overwrites the in-memory cache dictionary
+    rules.load_all_from_database(db_connection)
+```
+Using this pattern, the Docker container runs continuously, and database updates take effect instantly on the very next validation call.
