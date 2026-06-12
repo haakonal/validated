@@ -116,15 +116,22 @@ We can achieve "the best of both worlds" by combining JSON serialization with st
 
 The `Check` constraint accepts a Python `Callable` (predicate) e.g. `lambda x: x is True`. Since we cannot safely store raw Python code or lambdas directly in a database due to **Remote Code Execution (RCE) vulnerabilities** (avoiding functions like `eval()` or `pickle`), we represent predicates using a **Named Predicate Registry**.
 
-### Step 1: Define the Database Representation
-In the database, the `Check` constraint is stored by referencing a unique string identifier (`predicate_key`) rather than code:
+### How the Registry Translation Works
+Instead of storing code, the database stores a *reference key*. During startup, Python maps this key to a hardcoded lambda.
 
-* **`constraint_type`**: `"Check"`
-* **`parameters`**: `{"predicate_key": "all_panels_deployed", "description": "Verify all solar panels are deployed"}`
+```
+[ Database Row ]
+parameters: {"predicate_key": "is_true", "description": "must be visible"}
+       │
+       ▼ (Deserilization Query)
+[ Python Rules Engine ]
+Looks up "is_true" in PREDICATE_REGISTRY -> lambda x: x is True
+       │
+       ▼ (Instantiation)
+Check(lambda x: x is True, "must be visible")
+```
 
-### Step 2: Implement the Predicate Registry in Code
-Map the unique keys to safe, pre-defined Python functions:
-
+### Implementing the Registry in Code
 ```python
 # src/satellite/rules.py
 from constraints import Check
@@ -137,7 +144,6 @@ PREDICATE_REGISTRY = {
     "is_even": lambda val: val % 2 == 0,
 }
 
-# Add Check to the deserialization routine
 def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
     if constraint_type == "Check":
         pred_key = parameters.get("predicate_key")
@@ -149,16 +155,31 @@ def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
             
         return Check(predicate, description)
         
-    # Standard numerical/pattern deserialization follows...
     cls = CONSTRAINT_REGISTRY.get(constraint_type)
     return cls(**parameters)
 ```
 
-By storing a string identifier, the database remains language-agnostic, secure, and easily auditable, while the validation logic remains safe inside compiled Python files.
+---
+
+## 6. The "Hybrid" Architecture: Separating Data Rules from Code Rules
+
+While representing constraints in a database is highly effective for numeric bounds (`LessThan`, `InRange`), it is often a design anti-pattern to store procedural rules (like `Check` lambdas) in database tables. 
+
+Instead, a production satellite system uses a **Hybrid Architecture** that divides constraints into two categories:
+
+### A. Data-Driven Rules (Database)
+Dynamic values that operators adjust during orbit to account for hardware degradation, seasonal deviations, or mission changes.
+* **Examples**: Max temperatures, minimum battery charges, max slew speeds.
+* **Storage**: Single Polymorphic JSONB Database Table.
+
+### B. Structural System Invariants (Code-Only)
+Core logical rules built into the spacecraft's design that *never* change. 
+* **Examples**: "Solar panels must be deployed in charging mode", "ground station must be visible during downlinks".
+* **Storage**: Hardcoded directly inside the Python decorators (e.g. `Check(lambda x: x is True)`) in `validation.py`. This ensures core safety logic is protected from database typos.
 
 ---
 
-## 6. Database Payloads for All Constraint Models
+## 7. Database Payloads for All Constraint Models
 
 Here is the complete reference of how each of the 8 constraint types in the `constraints` library maps to the JSON `parameters` column in the database:
 
@@ -174,7 +195,7 @@ Here is the complete reference of how each of the 8 constraint types in the `con
 * **Python Representation**: `InRange(min_val=-10.0, max_val=40.0)`
 * **Database JSON**: `{"min_val": -10.0, "max_val": 40.0}`
 
-### 4. `Length`
+### 5. `Length`
 * **Python Representation**: `Length(min_len=1, max_len=5)`
 * **Database JSON**: `{"min_len": 1, "max_len": 5}` (Either key can be omitted if only enforcing a minimum or maximum boundary)
 
@@ -193,4 +214,3 @@ Here is the complete reference of how each of the 8 constraint types in the `con
 ### 8. `DType` (NumPy Array Data Type)
 * **Python Representation**: `DType("float64")`
 * **Database JSON**: `{"dtype": "float64"}`
-
