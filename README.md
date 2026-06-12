@@ -232,6 +232,53 @@ def validate_task_against_db(task_type: str, task_payload: dict, db_connection):
     return True
 ```
 
+### D. Optimization: Caching Constraints at Startup
+Querying the database and instantiating constraint objects on every validation call adds latency. In hot loops or real-time control streams, you can fetch all constraints at application **startup**, instantiate them once, and cache them in memory:
+
+```python
+# In-memory registry cache of loaded constraints
+# Structure: { context_name: [(parameter_name, constraint_object), ...] }
+ACTIVE_CONSTRAINTS: dict[str, list[tuple[str, Constraint]]] = {}
+
+def initialize_constraints(db_connection):
+    """Fetches all constraints from DB and caches their initialized Python objects in memory."""
+    global ACTIVE_CONSTRAINTS
+    cursor = db_connection.cursor()
+    cursor.execute("SELECT context_name, parameter_name, constraint_type, parameters FROM operational_constraints")
+    
+    # Rebuild the cache dictionary
+    temp_cache = {}
+    for context, param, c_type, params in cursor.fetchall():
+        constraint_obj = load_constraint(c_type, params)
+        if context not in temp_cache:
+            temp_cache[context] = []
+        temp_cache[context].append((param, constraint_obj))
+        
+    ACTIVE_CONSTRAINTS = temp_cache
+
+def validate_task_optimized(task_type: str, task_payload: dict) -> bool:
+    """Validates the task using the pre-compiled in-memory constraint cache."""
+    rules = ACTIVE_CONSTRAINTS.get(task_type, [])
+    for parameter_name, constraint in rules:
+        if parameter_name not in task_payload:
+            continue
+        
+        value = task_payload[parameter_name]
+        if not constraint.validate(value):
+            raise ConstraintValidationError(
+                parameter_name=parameter_name,
+                value=value,
+                constraint=constraint,
+                message=constraint.error_message(value)
+            )
+    return True
+```
+
+#### Why use this approach?
+1. **Performance**: Bypasses network and filesystem latency entirely during the verification phase. Checking constraints becomes a pure in-memory Python method call (taking nanoseconds instead of milliseconds).
+2. **Zero Object Instantiation Overhead**: You instantiate constraint objects exactly once when the application boots up.
+3. **Hot-Reloading**: If operators update rules in the database, you can dynamically update the active constraints in-memory without rebooting the system by simply re-running `initialize_constraints(db_connection)`.
+
 ---
 
 ## 4. How to Run & Verify the Code
