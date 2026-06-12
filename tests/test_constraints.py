@@ -212,3 +212,95 @@ def test_var_args_and_kwargs():
         process_many(1, 2, alpha=1.5)
     assert excinfo.value.parameter_name == "options['alpha']"
     assert excinfo.value.value == 1.5
+
+
+# 8. Test MatchesPattern uses fullmatch (not partial match)
+def test_matches_pattern_fullmatch():
+    """Verify that MatchesPattern requires the ENTIRE string to match,
+    not just the beginning (fullmatch semantics vs match semantics)."""
+    @constrained
+    def process(code: Annotated[str, MatchesPattern(r"\d{3}")]):
+        return code
+
+    # Exact match should pass
+    assert process("123") == "123"
+
+    # Partial match at start should FAIL (would pass with re.match)
+    with pytest.raises(ConstraintValidationError) as excinfo:
+        process("123abc")
+    assert excinfo.value.parameter_name == "code"
+    assert "must match pattern" in excinfo.value.message
+
+    # Partial match at end should also FAIL
+    with pytest.raises(ConstraintValidationError) as excinfo:
+        process("abc123")
+    assert excinfo.value.parameter_name == "code"
+
+
+# 9. Test __repr__ on all constraint classes
+def test_constraint_repr():
+    assert repr(GreaterThan(5)) == "GreaterThan(threshold=5)"
+    assert repr(LessThan(2.0)) == "LessThan(threshold=2.0)"
+    assert repr(InRange(0, 100)) == "InRange(min_val=0, max_val=100)"
+    assert repr(Length(min_len=1, max_len=10)) == "Length(min_len=1, max_len=10)"
+    assert repr(MatchesPattern(r"\d+")) == r"MatchesPattern(pattern='\\d+')"
+    assert repr(Check(lambda x: x, "test")) == "Check(description='test')"
+    assert repr(Shape(None, 3)) == "Shape(dims=(None, 3))"
+    assert repr(DType("float64")) == "DType(dtype=dtype('float64'))"
+
+
+# 10. Test __eq__ on all constraint classes
+def test_constraint_equality():
+    assert GreaterThan(5) == GreaterThan(5)
+    assert GreaterThan(5) != GreaterThan(10)
+    assert GreaterThan(5) != LessThan(5)
+
+    assert LessThan(2.0) == LessThan(2.0)
+    assert LessThan(2.0) != LessThan(3.0)
+
+    assert InRange(0, 100) == InRange(0, 100)
+    assert InRange(0, 100) != InRange(0, 50)
+
+    assert Length(min_len=1, max_len=10) == Length(min_len=1, max_len=10)
+    assert Length(min_len=1) != Length(max_len=1)
+
+    assert MatchesPattern(r"\d+") == MatchesPattern(r"\d+")
+    assert MatchesPattern(r"\d+") != MatchesPattern(r"\w+")
+
+    # Check equality uses identity for predicates (lambdas are unique objects)
+    pred = lambda x: x > 0
+    assert Check(pred, "pos") == Check(pred, "pos")
+    assert Check(pred, "pos") != Check(pred, "different desc")
+    assert Check(pred, "pos") != Check(lambda x: x > 0, "pos")  # different lambda object
+
+    assert Shape(None, 3) == Shape(None, 3)
+    assert Shape(3) != Shape(None, 3)
+
+    assert DType("float64") == DType(np.float64)
+    assert DType("float64") != DType("int32")
+
+
+# 11. Test Check exception chaining via __cause__
+def test_check_exception_chaining():
+    """When a Check predicate raises an exception (e.g. AttributeError),
+    the ConstraintValidationError should chain the original exception via __cause__."""
+
+    def buggy_predicate(value):
+        # This will raise AttributeError because int has no .nonexistent attribute
+        return value.nonexistent_attribute
+
+    @constrained
+    def process(x: Annotated[int, Check(buggy_predicate, "buggy check")]):
+        return x
+
+    with pytest.raises(ConstraintValidationError) as excinfo:
+        process(42)
+
+    # The ConstraintValidationError should exist
+    assert excinfo.value.parameter_name == "x"
+    assert excinfo.value.constraint is not None
+    assert isinstance(excinfo.value.constraint, Check)
+
+    # The original AttributeError should be chained as __cause__
+    assert excinfo.value.__cause__ is not None
+    assert isinstance(excinfo.value.__cause__, AttributeError)
