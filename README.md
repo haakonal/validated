@@ -181,7 +181,16 @@ CREATE TABLE operational_constraints (
     context_name VARCHAR(100) NOT NULL,    -- e.g., "slew_task"
     parameter_name VARCHAR(100) NOT NULL,  -- e.g., "max_slew_speed"
     constraint_type VARCHAR(50) NOT NULL,  -- e.g., "LessThan", "InRange"
-    parameters JSONB NOT NULL              -- e.g., '{"threshold": 2.0}' or '{"min_val": 80, "max_val": 100}'
+    parameters JSONB NOT NULL,             -- e.g., '{"threshold": 2.0}' or '{"min_val": 80, "max_val": 100}'
+    
+    -- Ensure JSON structure matches the selected constraint_type
+    CONSTRAINT check_parameter_integrity CHECK (
+        (constraint_type = 'LessThan' AND parameters ? 'threshold') OR
+        (constraint_type = 'GreaterThan' AND parameters ? 'threshold') OR
+        (constraint_type = 'InRange' AND parameters ? 'min_val' AND parameters ? 'max_val') OR
+        (constraint_type = 'Length' AND (parameters ? 'min_len' OR parameters ? 'max_len')) OR
+        (constraint_type = 'MatchesPattern' AND parameters ? 'pattern')
+    )
 );
 ```
 
