@@ -279,6 +279,66 @@ def validate_task_optimized(task_type: str, task_payload: dict) -> bool:
 2. **Zero Object Instantiation Overhead**: You instantiate constraint objects exactly once when the application boots up.
 3. **Hot-Reloading**: If operators update rules in the database, you can dynamically update the active constraints in-memory without rebooting the system by simply re-running `initialize_constraints(db_connection)`.
 
+### E. Advanced: Before-Import Initialization (Retaining the Decorator Syntax)
+
+If you want to keep the clean, declarative `@constrained` decorator syntax in `validation.py` but still configure constraints from the database dynamically, you can use **Before-Import Initialization**. 
+
+Because Python type hints and decorators are executed at **import-time**, you can initialize the database configurations *before* importing the module containing your validated functions.
+
+#### 1. Define a Shared Config Module (`rules.py`)
+```python
+# src/satellite/rules.py
+from constraints import Constraint, LessThan, InRange
+
+# Global references for constraints (will be instantiated from DB on startup)
+MAX_SLEW_SPEED_LIMIT: Constraint = None
+BATTERY_CHARGE_RANGE: Constraint = None
+
+def load_from_database(db_connection):
+    global MAX_SLEW_SPEED_LIMIT, BATTERY_CHARGE_RANGE
+    # Fetch parameters from the database...
+    # For demonstration:
+    MAX_SLEW_SPEED_LIMIT = LessThan(db_slew_threshold)
+    BATTERY_CHARGE_RANGE = InRange(db_charge_min, 100.0)
+```
+
+#### 2. Declare Functions referencing the Config (`validation.py`)
+In your validation module, import the config module. When Python executes `@constrained` at import-time, it will resolve the current instantiated constraint values:
+
+```python
+# src/satellite/validation.py
+from typing import Annotated
+from constraints import constrained
+import satellite.rules as rules
+
+@constrained
+def validate_slew_task(
+    poi_name: str,
+    # References the dynamic object instantiated during startup
+    max_slew_speed: Annotated[float, rules.MAX_SLEW_SPEED_LIMIT],
+) -> bool:
+    return True
+```
+
+#### 3. Initialize in Application Boot (`main.py`)
+Initialize your rules *before* importing your validation routines:
+
+```python
+# main.py
+import sqlite3
+import satellite.rules as rules
+
+# 1. Connect to database and load rules
+conn = sqlite3.connect("spacecraft.db")
+rules.load_from_database(conn)
+
+# 2. NOW import validation routines (which compiles the decorator with the loaded values)
+from satellite.validation import validate_slew_task
+
+# 3. Call functions with fully active database-defined rules!
+validate_slew_task("POI-452", 1.2)
+```
+
 ---
 
 ## 4. How to Run & Verify the Code
