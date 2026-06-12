@@ -154,7 +154,87 @@ Tasks are modeled via `SlewTask` and `ImagingTask` and routed through `validate_
 
 ---
 
-## 3. How to Run & Verify the Code
+## 3. Database Configuration (Dynamic Constraints)
+
+In production satellite command and control systems, constraint thresholds (e.g. maximum slew speeds, temperature ranges) are frequently adjusted by mission operators. To avoid compiling new code for every operational change, constraints can be stored in a relational database (like PostgreSQL or SQLite) and loaded dynamically.
+
+### A. Database Schema
+You can store constraints in a `constraints` table with a JSON column for arguments:
+
+```sql
+CREATE TABLE operational_constraints (
+    id SERIAL PRIMARY KEY,
+    context_name VARCHAR(100) NOT NULL, -- e.g., "slew_task" or "charging_mode"
+    parameter_name VARCHAR(100) NOT NULL, -- e.g., "max_slew_speed" or "battery_charge_level"
+    constraint_type VARCHAR(50) NOT NULL, -- e.g., "LessThan", "InRange"
+    parameters JSONB NOT NULL             -- e.g., '{"threshold": 2.0}' or '{"min_val": 50, "max_val": 100}'
+);
+```
+
+### B. Rule Registry & Deserialization
+In your validation engine, create a registry map that connects string keys from the database to the Python constraint classes:
+
+```python
+from constraints import GreaterThan, LessThan, InRange, Length, MatchesPattern, Constraint
+
+# Map DB strings to Python classes
+CONSTRAINT_REGISTRY = {
+    "GreaterThan": GreaterThan,
+    "LessThan": LessThan,
+    "InRange": InRange,
+    "Length": Length,
+    "MatchesPattern": MatchesPattern,
+}
+
+def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
+    """Instantiates a constraint object dynamically from DB data."""
+    constraint_class = CONSTRAINT_REGISTRY.get(constraint_type)
+    if not constraint_class:
+        raise ValueError(f"Unknown constraint type: {constraint_type}")
+    return constraint_class(**parameters)
+```
+
+### C. Dynamic Run-Time Validation
+Because decorators run at import-time, database-driven constraints are best checked in a validation loop inside your task manager before committing a command:
+
+```python
+from constraints import ConstraintValidationError
+
+def validate_task_against_db(task_type: str, task_payload: dict, db_connection):
+    """
+    Queries constraints for the given task context from the DB,
+    reconstructs the objects, and validates the task data at runtime.
+    """
+    # 1. Fetch rules from database (conceptual)
+    cursor = db_connection.cursor()
+    cursor.execute(
+        "SELECT parameter_name, constraint_type, parameters FROM operational_constraints WHERE context_name = %s",
+        (task_type,)
+    )
+    rules = cursor.fetchall()
+
+    # 2. Iterate and validate each constraint
+    for parameter_name, constraint_type, parameters in rules:
+        if parameter_name not in task_payload:
+            continue
+        
+        value = task_payload[parameter_name]
+        constraint = load_constraint(constraint_type, parameters)
+
+        # 3. Perform check
+        if not constraint.validate(value):
+            raise ConstraintValidationError(
+                parameter_name=parameter_name,
+                value=value,
+                constraint=constraint,
+                message=constraint.error_message(value)
+            )
+    return True
+```
+
+---
+
+## 4. How to Run & Verify the Code
 
 Make sure your virtual environment is active:
 ```powershell
@@ -173,3 +253,4 @@ Run the telemetry validation demo script from the root workspace:
 python run_satellite_demo.py
 ```
 This script runs a sequence of telemetry packages simulating normal operations, bad sensor dimensions, battery overheating, and pointing errors, showcasing how constraints elegantly isolate and catch exceptions.
+
