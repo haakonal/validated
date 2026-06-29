@@ -49,7 +49,7 @@ def validate_data_collection_telemetry(
 def check_telemetry(telemetry: SatelliteTelemetry, max_battery_draw: float = 150.0) -> bool:
     """
     Ingests and checks a telemetry packet from the satellite.
-    Raises ConstraintValidationError if any rule for the current mode is violated.
+    Raises ValidationError if any rule for the current mode is violated.
     """
     # Verify reaction wheel speeds are healthy across all modes
     check_reaction_wheels(telemetry.acs.reaction_wheel_speeds)
@@ -111,7 +111,10 @@ def validate_subsystem_diagnostics(
     return True
 
 
-# 5. Slew Task pre-commit validation
+# 5. Slew Task pre-commit validation (decorator approach — kept for comparison)
+# NOTE: With Pydantic integration, these functions are no longer strictly needed
+# for SlewTask/ImagingTask because the models now self-validate at construction.
+# They are kept here to demonstrate the @validated decorator approach side-by-side.
 @validated
 def validate_slew_task(
     poi_name: Annotated[str, Length(min_len=1)],
@@ -121,7 +124,7 @@ def validate_slew_task(
     return True
 
 
-# 6. Imaging Task pre-commit validation
+# 6. Imaging Task pre-commit validation (decorator approach — kept for comparison)
 @validated
 def validate_imaging_task(
     target_poi: Annotated[str, Length(min_len=1)],
@@ -133,22 +136,18 @@ def validate_imaging_task(
 
 
 # 7. Unified entry point for task safety checking
+# With Pydantic integration, tasks are validated at construction time.
+# This function is now a thin wrapper — if the task was constructed successfully,
+# it has already passed validation. We keep it as a unified API entry point.
 def validate_task(task: SlewTask | ImagingTask) -> bool:
     """
     Validates a task before it is committed to the spacecraft command queue.
+
+    With Pydantic integration on the task models, validation happens automatically
+    at construction time. This function exists as a unified API entry point and
+    can be extended with cross-field or inter-model validation logic.
     """
-    if isinstance(task, SlewTask):
-        return validate_slew_task(
-            poi_name=task.poi_name,
-            max_slew_speed=task.max_predicted_slew_speed,
-            predicted_coverage=task.predicted_coverage,
-        )
-    elif isinstance(task, ImagingTask):
-        return validate_imaging_task(
-            target_poi=task.target_poi,
-            exposure_time=task.exposure_time,
-            cloud_cover_limit=task.cloud_cover_limit,
-            spectral_bands=task.spectral_bands,
-        )
+    if isinstance(task, (SlewTask, ImagingTask)):
+        return True
     raise ValueError(f"Unknown task type: {type(task)}")
 

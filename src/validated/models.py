@@ -2,6 +2,8 @@ import re
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Sequence
 import numpy as np
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import CoreSchema, core_schema
 
 
 class Validator(ABC):
@@ -13,6 +15,19 @@ class Validator(ABC):
 
     def error_message(self, value: Any) -> str:
         return f"Value {value!r} does not satisfy {self.__class__.__name__}"
+
+    def __get_pydantic_core_schema__(
+        self, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        """Hook into Pydantic v2 so this validator works as Annotated metadata on BaseModel fields."""
+        schema = handler(source_type)
+
+        def _after_validate(value: Any) -> Any:
+            if not self.validate(value):
+                raise ValueError(self.error_message(value))
+            return value
+
+        return core_schema.no_info_after_validator_function(_after_validate, schema)
 
 
 class GreaterThan(Validator):

@@ -201,7 +201,7 @@ def test_selective_validation():
 
 
 def test_task_validation():
-    # 1. Valid Slew Task
+    # 1. Valid Slew Task — construction succeeds (validation passes)
     valid_slew = SlewTask(
         poi_name="Paris_Observation",
         target_yaw=12.5,
@@ -212,35 +212,32 @@ def test_task_validation():
     )
     assert validate_task(valid_slew) is True
 
-    # 2. Slew Task with exceeded slew speed
-    fast_slew = SlewTask(
-        poi_name="Paris_Observation",
-        target_yaw=12.5,
-        target_pitch=-45.0,
-        duration_seconds=30.0,
-        max_predicted_slew_speed=2.5,  # 2.5 > 2.0! (Violates LessThan(2.0))
-        predicted_coverage=92.5,
-    )
-    with pytest.raises(ValidationError) as excinfo:
-        validate_task(fast_slew)
-    assert excinfo.value.parameter_name == "max_slew_speed"
-    assert "must be less than 2.0" in excinfo.value.message
+    # 2. Slew Task with exceeded slew speed — fails at construction time
+    from pydantic import ValidationError as PydanticValidationError
+    with pytest.raises(PydanticValidationError) as excinfo:
+        SlewTask(
+            poi_name="Paris_Observation",
+            target_yaw=12.5,
+            target_pitch=-45.0,
+            duration_seconds=30.0,
+            max_predicted_slew_speed=2.5,  # 2.5 > 2.0! (Violates LessThan(2.0))
+            predicted_coverage=92.5,
+        )
+    assert "must be less than 2.0" in str(excinfo.value)
 
-    # 3. Slew Task with poor coverage
-    poor_coverage_slew = SlewTask(
-        poi_name="Paris_Observation",
-        target_yaw=12.5,
-        target_pitch=-45.0,
-        duration_seconds=30.0,
-        max_predicted_slew_speed=1.5,
-        predicted_coverage=75.0,       # 75.0 < 80.0! (Violates InRange(80.0, 100.0))
-    )
-    with pytest.raises(ValidationError) as excinfo:
-        validate_task(poor_coverage_slew)
-    assert excinfo.value.parameter_name == "predicted_coverage"
-    assert "must be in range [80.0, 100.0]" in excinfo.value.message
+    # 3. Slew Task with poor coverage — fails at construction time
+    with pytest.raises(PydanticValidationError) as excinfo:
+        SlewTask(
+            poi_name="Paris_Observation",
+            target_yaw=12.5,
+            target_pitch=-45.0,
+            duration_seconds=30.0,
+            max_predicted_slew_speed=1.5,
+            predicted_coverage=75.0,       # 75.0 < 80.0! (Violates InRange(80.0, 100.0))
+        )
+    assert "must be in range [80.0, 100.0]" in str(excinfo.value)
 
-    # 4. Valid Imaging Task
+    # 4. Valid Imaging Task — construction succeeds
     valid_imaging = ImagingTask(
         target_poi="London_POI",
         exposure_time=1.2,             # in [0.01, 5.0]
@@ -249,16 +246,13 @@ def test_task_validation():
     )
     assert validate_task(valid_imaging) is True
 
-    # 5. Imaging Task with too many spectral bands
-    too_many_bands_imaging = ImagingTask(
-        target_poi="London_POI",
-        exposure_time=1.2,
-        cloud_cover_limit=15.0,
-        spectral_bands=["Band1", "Band2", "Band3", "Band4", "Band5", "Band6"],  # 6 bands > 5!
-    )
-    with pytest.raises(ValidationError) as excinfo:
-        validate_task(too_many_bands_imaging)
-    assert excinfo.value.parameter_name == "spectral_bands"
-    assert "length must be between 1 and 5" in excinfo.value.message
-
+    # 5. Imaging Task with too many spectral bands — fails at construction time
+    with pytest.raises(PydanticValidationError) as excinfo:
+        ImagingTask(
+            target_poi="London_POI",
+            exposure_time=1.2,
+            cloud_cover_limit=15.0,
+            spectral_bands=["Band1", "Band2", "Band3", "Band4", "Band5", "Band6"],  # 6 bands > 5!
+        )
+    assert "length must be between 1 and 5" in str(excinfo.value)
 

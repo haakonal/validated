@@ -214,7 +214,7 @@ def main():
         print("Running validate_subsystem_diagnostics('PWR-002', '12.4', {'voltage': 28.5})")
         validate_subsystem_diagnostics("PWR-002", "12.4", {"voltage": 28.5})
         print("RESULT: [PASS] All inputs validated and coerced successfully!")
-    except ConstraintValidationError as e:
+    except ValidationError as e:
         print(f"RESULT: [FAIL] {e}")
         
     # 9b. Failing constraint check (Full validation parameter pattern mismatch)
@@ -222,7 +222,7 @@ def main():
     try:
         print("Running validate_subsystem_diagnostics('INVALID-ID', 12.4, {'voltage': 28.5})")
         validate_subsystem_diagnostics("INVALID-ID", 12.4, {"voltage": 28.5})
-    except ConstraintValidationError as e:
+    except ValidationError as e:
         print(f"RESULT: [FAIL] Telemetry validation FAILED!")
         print_validation_error(e)
 
@@ -231,79 +231,77 @@ def main():
     try:
         print("Running validate_subsystem_diagnostics('PWR-002', 'not-a-float', {'voltage': 28.5})")
         validate_subsystem_diagnostics("PWR-002", "not-a-float", {"voltage": 28.5})
-    except ConstraintValidationError as e:
+    except ValidationError as e:
         print(f"RESULT: [FAIL] Telemetry validation FAILED!")
         print_validation_error(e)
 
-    # 10. Pre-Commit Task Validation Demo (Slew speed and Coverage constraints)
-    print_header("Pre-Commit Task Validation Scenarios")
+    # With Pydantic integration, tasks are validated at construction time.
+    print_header("Pre-Commit Task Validation (Pydantic BaseModel Integration)")
     
-    # 10a. Successful Slew Task
-    slew_ok = SlewTask(
-        poi_name="Sydney_Station",
-        target_yaw=45.2,
-        target_pitch=-10.5,
-        duration_seconds=15.0,
-        max_predicted_slew_speed=1.2, # 1.2 deg/s < 2.0 limit
-        predicted_coverage=88.5,      # 88.5% in [80.0, 100.0]
-    )
+    from pydantic import ValidationError as PydanticValidationError
+
+    # 10a. Successful Slew Task — construction passes
     try:
+        slew_ok = SlewTask(
+            poi_name="Sydney_Station",
+            target_yaw=45.2,
+            target_pitch=-10.5,
+            duration_seconds=15.0,
+            max_predicted_slew_speed=1.2, # 1.2 deg/s < 2.0 limit
+            predicted_coverage=88.5,      # 88.5% in [80.0, 100.0]
+        )
         print(f"Validating SlewTask to {slew_ok.poi_name} (speed={slew_ok.max_predicted_slew_speed} deg/s, coverage={slew_ok.predicted_coverage}%)")
-        validate_task(slew_ok)
         print("RESULT: [PASS] Slew task passes pre-commit checks! Ready to upload to command queue.")
-    except ConstraintValidationError as e:
-        print(f"RESULT: [FAIL] Slew task rejected: {e}")
+    except PydanticValidationError as e:
+        print(f"RESULT: [FAIL] Slew task rejected at construction:\n{e}")
 
-    # 10b. Slew Task exceeding speed limit
+    # 10b. Slew Task exceeding speed limit — fails at construction
     print("-" * 80)
-    slew_too_fast = SlewTask(
-        poi_name="Sydney_Station",
-        target_yaw=45.2,
-        target_pitch=-10.5,
-        duration_seconds=5.0,
-        max_predicted_slew_speed=3.1, # 3.1 deg/s > 2.0 limit!
-        predicted_coverage=95.0,
-    )
     try:
-        print(f"Validating SlewTask to {slew_too_fast.poi_name} (speed={slew_too_fast.max_predicted_slew_speed} deg/s, coverage={slew_too_fast.predicted_coverage}%)")
-        validate_task(slew_too_fast)
-    except ConstraintValidationError as e:
-        print("RESULT: [FAIL] Slew task REJECTED! Violation of safety threshold.")
-        print_validation_error(e)
+        print("Attempting SlewTask with speed=3.1 deg/s (limit: 2.0 deg/s)...")
+        slew_too_fast = SlewTask(
+            poi_name="Sydney_Station",
+            target_yaw=45.2,
+            target_pitch=-10.5,
+            duration_seconds=5.0,
+            max_predicted_slew_speed=3.1, # 3.1 deg/s > 2.0 limit!
+            predicted_coverage=95.0,
+        )
+    except PydanticValidationError as e:
+        print("RESULT: [FAIL] Slew task REJECTED at construction! Pydantic caught the violation:")
+        print(f"  {e}")
 
-    # 10c. Slew Task with poor coverage
+    # 10c. Slew Task with poor coverage — fails at construction
     print("-" * 80)
-    slew_low_coverage = SlewTask(
-        poi_name="Sydney_Station",
-        target_yaw=45.2,
-        target_pitch=-10.5,
-        duration_seconds=20.0,
-        max_predicted_slew_speed=0.8,
-        predicted_coverage=71.2,      # 71.2% < 80.0% min required!
-    )
     try:
-        print(f"Validating SlewTask to {slew_low_coverage.poi_name} (speed={slew_low_coverage.max_predicted_slew_speed} deg/s, coverage={slew_low_coverage.predicted_coverage}%)")
-        validate_task(slew_low_coverage)
-    except ConstraintValidationError as e:
-        print("RESULT: [FAIL] Slew task REJECTED! Violation of safety threshold.")
-        print_validation_error(e)
+        print("Attempting SlewTask with coverage=71.2% (minimum: 80.0%)...")
+        slew_low_coverage = SlewTask(
+            poi_name="Sydney_Station",
+            target_yaw=45.2,
+            target_pitch=-10.5,
+            duration_seconds=20.0,
+            max_predicted_slew_speed=0.8,
+            predicted_coverage=71.2,      # 71.2% < 80.0% min required!
+        )
+    except PydanticValidationError as e:
+        print("RESULT: [FAIL] Slew task REJECTED at construction! Pydantic caught the violation:")
+        print(f"  {e}")
 
-    # 10d. Slew Task with Multiple Violations (speed too high and coverage too low)
+    # 10d. Slew Task with Multiple Violations — Pydantic reports all errors at once
     print("-" * 80)
-    slew_multiple_fails = SlewTask(
-        poi_name="Sydney_Station",
-        target_yaw=45.2,
-        target_pitch=-10.5,
-        duration_seconds=5.0,
-        max_predicted_slew_speed=3.5, # 3.5 deg/s > 2.0 limit!
-        predicted_coverage=75.0,      # 75% < 80% min required!
-    )
     try:
-        print(f"Validating SlewTask to {slew_multiple_fails.poi_name} (speed={slew_multiple_fails.max_predicted_slew_speed} deg/s, coverage={slew_multiple_fails.predicted_coverage}%)")
-        validate_task(slew_multiple_fails)
-    except ConstraintValidationError as e:
-        print("RESULT: [FAIL] Slew task REJECTED! Violation of safety threshold.")
-        print_validation_error(e)
+        print("Attempting SlewTask with speed=3.5 AND coverage=75.0% (both violate limits)...")
+        slew_multiple_fails = SlewTask(
+            poi_name="Sydney_Station",
+            target_yaw=45.2,
+            target_pitch=-10.5,
+            duration_seconds=5.0,
+            max_predicted_slew_speed=3.5, # 3.5 deg/s > 2.0 limit!
+            predicted_coverage=75.0,      # 75% < 80% min required!
+        )
+    except PydanticValidationError as e:
+        print("RESULT: [FAIL] Slew task REJECTED at construction! Multiple violations detected:")
+        print(f"  {e}")
 
 
 if __name__ == "__main__":

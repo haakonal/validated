@@ -78,6 +78,39 @@ The `@validated` decorator supports three levels of validation on a parameter-by
 
 This is demonstrated in [src/satellite/validation.py](src/satellite/validation.py) via `validate_subsystem_diagnostics`.
 
+### Standard Pydantic Integration
+
+All `Validator` classes implement Pydantic v2's `__get_pydantic_core_schema__` protocol, meaning they work **natively** as `Annotated` metadata on Pydantic `BaseModel` fields — no `@validated` decorator needed:
+
+```python
+from pydantic import BaseModel
+from validated import Validated, GreaterThan, LessThan, InRange, MatchesPattern
+
+class SatelliteConfig(BaseModel):
+    max_slew_speed: Validated[float, LessThan(2.0)]
+    battery_charge: Validated[float, InRange(50.0, 100.0)]
+    subsystem_id: Validated[str, MatchesPattern(r"^(ACS|PWR|COM)-\d{3}$")]
+
+# Valid — passes all validators
+config = SatelliteConfig(max_slew_speed=1.5, battery_charge=80.0, subsystem_id="ACS-101")
+
+# Invalid — raises Pydantic's ValidationError with our custom messages
+config = SatelliteConfig(max_slew_speed=3.0, battery_charge=80.0, subsystem_id="ACS-101")
+# ValidationError: 1 validation error for SatelliteConfig
+#   max_slew_speed
+#     Value error, must be less than 2.0
+```
+
+Multiple validators can be stacked on a single field:
+```python
+class ScoreModel(BaseModel):
+    score: Validated[float, GreaterThan(0.0), LessThan(100.0)]
+```
+
+Pydantic's type coercion still works transparently — string `"5"` is coerced to `int(5)` before the validator runs.
+
+> **Note**: NumPy validators (`Shape`, `DType`) are not supported on Pydantic models because Pydantic does not natively handle `np.ndarray`. Use the `@validated` function decorator for NumPy array validation.
+
 ---
 
 ## 2. The `satellite` Package & Subsystem Validation

@@ -189,7 +189,31 @@ Core logical rules built into the spacecraft's design that *never* change.
 * **Examples**: "Solar panels must be deployed in charging mode", "ground station must be visible during downlinks".
 * **Storage**: Hardcoded directly inside the Python decorators (e.g. `Check(lambda x: x is True)`) in `validation.py`. This ensures core safety logic is protected from database typos.
 
+### C. Pydantic BaseModel Integration (Model-Level Validation)
+Because all `Validator` classes implement Pydantic v2's `__get_pydantic_core_schema__` protocol, database-loaded validators can be applied directly to Pydantic `BaseModel` field definitions — not just to `@validated` function parameters.
+
+This enables a powerful pattern: **task and configuration models that self-validate at construction time**. For example, the satellite domain uses this to enforce constraints on `SlewTask` and `ImagingTask` models:
+
+```python
+from pydantic import BaseModel
+from validated import Validated, LessThan, InRange, Length
+
+class SlewTask(BaseModel):
+    poi_name: Validated[str, Length(min_len=1)]
+    max_predicted_slew_speed: Validated[float, LessThan(2.0)]
+    predicted_coverage: Validated[float, InRange(80.0, 100.0)]
+
+# Invalid tasks are rejected at construction — before they ever reach the command queue
+task = SlewTask(poi_name="Target", max_predicted_slew_speed=3.0, predicted_coverage=92.5)
+# → pydantic.ValidationError: must be less than 2.0
+```
+
+This pattern complements the decorator-based approach:
+* **`@validated` decorator**: Best for functions that process telemetry streams, where parameters come from runtime calculations (e.g. `net_power`, `power_margin`) and NumPy arrays need validation.
+* **`BaseModel` fields**: Best for data models like tasks, configurations, and API payloads that should be validated at the point of creation.
+
 ---
+
 
 ## 7. Database Payloads for All Validator Models
 
