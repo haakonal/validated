@@ -1,20 +1,20 @@
 # Constraints & Satellite Validation Engine
 
 This repository contains:
-1. **`constraints`**: A lightweight data validation and type coercion library using Pydantic and NumPy under the hood.
+1. **`validated`**: A lightweight data validation and type coercion library using Pydantic and NumPy under the hood.
 2. **`satellite`**: A realistic simulation domain package (located under `src/satellite`) demonstrating how to enforce operational constraints on complex satellite subsystems.
 
 ---
 
-## 1. How the `constraints` Package Works
+## 1. How the `validated` Package Works
 
-The `constraints` library leverages Python's PEP 593 (`typing.Annotated`) metadata to attach validation rules directly to function arguments. 
+The `validated` library leverages Python's PEP 593 (`typing.Annotated`) metadata to attach validation rules directly to function arguments. 
 
 ### File-by-File Implementation
 
 ```mermaid
 graph TD
-    A["Function Call"] --> B["@constrained wrapper"]
+    A["Function Call"] --> B["@validated wrapper"]
     B --> C["inspect.signature / typing.get_type_hints"]
     C --> D["Pydantic Type Coercion / Validation"]
     D --> E["Custom Constraint Validation"]
@@ -23,14 +23,14 @@ graph TD
     G --> H["Return Value"]
 ```
 
-#### A. [src/constraints/exceptions.py](src/constraints/exceptions.py)
-This module defines the custom `ConstraintValidationError` exception.
+#### A. [src/validated/exceptions.py](src/validated/exceptions.py)
+This module defines the custom `ValidationError` exception.
 * **Implementation**: Subclasses the standard `ValueError` and stores contextual information: `parameter_name`, `value` (that caused the violation), `constraint` (the constraint object violated), and the `message`.
 * **Design Decision**: Explicitly tracking the failing parameter name and the rejected value allows upstream systems (like telemetry managers or REST APIs) to render targeted error messages, log failures, or trigger automatic safing procedures without guessing which argument failed.
 
-#### B. [src/constraints/models.py](src/constraints/models.py)
+#### B. [src/validated/models.py](src/validated/models.py)
 This file defines the class hierarchy of all validation rule classes.
-* **`Constraint` Base Class**:
+* **`Validator` Base Class**:
   Defines the abstract interface: `validate(self, value) -> bool` and `error_message(self, value) -> str`.
 * **Standard Constraints**:
   - `GreaterThan` & `LessThan`: Basic boundary checks.
@@ -42,10 +42,10 @@ This file defines the class hierarchy of all validation rule classes.
   - `Shape`: Inspects a NumPy array's `.shape` attribute and matches it to a predefined tuple template (supporting wildcard constraints using `-1`, `*`, or `None`).
   - `DType`: Validates the NumPy array's data type.
 * **Design Decision**: *Why class-based instead of pure functions?*
-  Using objects allows constraints to be parameterizable (e.g., storing boundaries inside `min_val` and `max_val`). When a validation fails, the constraint instance is returned along with the exception, allowing the caller to inspect metadata or build context-aware logs (e.g. `isinstance(e.constraint, Shape)`).
+  Using objects allows constraints to be parameterizable (e.g., storing boundaries inside `min_val` and `max_val`). When a validation fails, the constraint instance is returned along with the exception, allowing the caller to inspect metadata or build context-aware logs (e.g. `isinstance(e.validator, Shape)`).
 
-#### C. [src/constraints/decorator.py](src/constraints/decorator.py)
-This is the core validation engine that implements the `@constrained` decorator.
+#### C. [src/validated/decorator.py](src/validated/decorator.py)
+This is the core validation engine that implements the `@validated` decorator.
 * **Implementation Details**:
   1. **Signature Parsing**: Uses `inspect.signature(func)` to determine names and order of arguments.
   2. **Type Extraction**: Uses `typing.get_type_hints(func, include_extras=True)` to retrieve the type signatures. Passing `include_extras=True` ensures that metadata inside `Annotated[Type, Metadata]` is preserved.
@@ -58,7 +58,7 @@ This is the core validation engine that implements the `@constrained` decorator.
 
 ### Selective Validation Levels
 
-The `@constrained` decorator supports three levels of validation on a parameter-by-parameter basis:
+The `@validated` decorator supports three levels of validation on a parameter-by-parameter basis:
 
 1. **Full Validation (Type Coercion + Value Constraints)**:
    Using `Annotated[Type, Constraint]`. The parameter is type-checked (and coerced if possible), then all associated constraints are validated.
@@ -96,12 +96,12 @@ We use Pydantic models to represent the telemetry state:
 * **`SatelliteTelemetry`**: A wrapper representing the aggregate state of the spacecraft along with its current `mode`.
 
 ### Subsystem Telemetry Validation ([src/satellite/validation.py](src/satellite/validation.py))
-Instead of nesting complex `if/else` checks inside a single massive function, we divide and conquer using the `@constrained` decorator:
+Instead of nesting complex `if/else` checks inside a single massive function, we divide and conquer using the `@validated` decorator:
 
 #### A. Checking NumPy Arrays
 The Attitude Control System controls orientation using 3 reaction wheels. If the telemetry lists only 2 wheels or uses the wrong encoding, it's a structural failure. We enforce this cleanly using annotations:
 ```python
-@constrained
+@validated
 def check_reaction_wheels(
     wheel_speeds: Annotated[np.ndarray, Shape(3), DType(np.float64)]
 ) -> bool:
@@ -117,7 +117,7 @@ In `charging` mode, we assert that:
 5. Net power is positive (total generated - total drawn > 0).
 
 ```python
-@constrained
+@validated
 def validate_charging_telemetry(
     panels_deployed: Annotated[bool, Check(lambda x: x is True, "all solar panels must be deployed")],
     net_power: Annotated[float, GreaterThan(0.0)],
@@ -141,7 +141,7 @@ Before committing a planned spacecraft task (e.g., targeting a Point of Interest
 
 ```python
 # From src/satellite/validation.py
-@constrained
+@validated
 def validate_slew_task(
     poi_name: Annotated[str, Length(min_len=1)],
     max_slew_speed: Annotated[float, LessThan(2.0)],             # Slew speed limit: 2.0 deg/s
@@ -160,7 +160,7 @@ In production spacecraft ground stations, constraint thresholds (e.g., maximum s
 
 The database architecture for this project uses a **Single Polymorphic Table (Document Style)** — all constraint types share one table with a JSONB `parameters` column. This design supports:
 
-* **Before-Import Initialization**: Loading constraint values from the database at startup, then binding them into the `@constrained` decorator annotations before `validation.py` is imported.
+* **Before-Import Initialization**: Loading constraint values from the database at startup, then binding them into the `@validated` decorator annotations before `validation.py` is imported.
 * **Per-Satellite Rules**: Different thresholds for different spacecraft (e.g., an older satellite with degraded reaction wheels might use `LessThan(1.0)` for slew speed, while a newer one uses `LessThan(3.0)`).
 * **Safe Predicate Serialization**: `Check` predicates are stored as registry keys (not raw code) and resolved to hardcoded lambdas at startup via a Named Predicate Registry.
 * **Runtime Hot-Reloading (Docker)**: A Proxy Constraint pattern enables live threshold updates without container restarts.

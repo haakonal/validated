@@ -1,6 +1,6 @@
 # Database Design: Polymorphic Document Table vs. Schema-Strict Tables
 
-> **This is the authoritative design reference** for integrating the `constraints` library with a relational database. The SQL schemas, Python modules (`rules.py`, `main.py`), and architectural patterns shown here are illustrative examples — they are not shipped as part of this package. See the [README](README.md) for the library API and satellite validation examples.
+> **This is the authoritative design reference** for integrating the `validated` library with a relational database. The SQL schemas, Python modules (`rules.py`, `main.py`), and architectural patterns shown here are illustrative examples — they are not shipped as part of this package. See the [README](README.md) for the library API and satellite validation examples.
 
 When designing a database schema to store operational constraints (flight rules) for satellite subsystems, we face a classic architectural choice:
 
@@ -77,7 +77,7 @@ CREATE TABLE in_range_constraints (
 | :--- | :--- | :--- |
 | **Schema Evolution** | Extremely Easy (0 migrations) | Difficult (requires database migrations) |
 | **Query Complexity** | Very Low (single table query) | High (requires joins or multiple queries) |
-| **Write Integrity** | Application-Level / JSON Check Constraints | Native Database Engine Level |
+| **Write Integrity** | Application-Level / JSON Check Validators | Native Database Engine Level |
 | **Performance (Retrieval)**| Fast (single index seek) | Moderate to Slow (multiple joins/queries) |
 | **Operational Simplicity** | Very High | Low |
 
@@ -88,7 +88,7 @@ CREATE TABLE in_range_constraints (
 For spacecraft flight rules, **the Single Polymorphic Table (Document Style)** was chosen for three key architectural reasons:
 
 ### 1. The Polymorphism of Rules
-Constraints are inherently polymorphic—they share the same metadata headers (`satellite_norad_id`, `context_name`, `parameter_name`) but vary in parameters. Querying them polymorphically using Table-per-Type results in messy code and query degradation. A single table with JSON serialization allows the database to remain simple while Python handles the polymorphic object generation.
+Validators are inherently polymorphic—they share the same metadata headers (`satellite_norad_id`, `context_name`, `parameter_name`) but vary in parameters. Querying them polymorphically using Table-per-Type results in messy code and query degradation. A single table with JSON serialization allows the database to remain simple while Python handles the polymorphic object generation.
 
 ### 2. Caching at Application Startup
 Because our validation architecture fetches rules at application startup (or uses *Before-Import Initialization*), **we only read constraints from the database once**. 
@@ -114,7 +114,7 @@ We can achieve "the best of both worlds" by combining JSON serialization with st
 
 ---
 
-## 5. Serializing the `Check` (Predicate) Constraint Safely
+## 5. Serializing the `Check` (Predicate) Validator Safely
 
 The `Check` constraint accepts a Python `Callable` (predicate) e.g. `lambda x: x is True`. Since we cannot safely store raw Python code or lambdas directly in a database due to **Remote Code Execution (RCE) vulnerabilities** (avoiding functions like `eval()` or `pickle`), we represent predicates using a **Named Predicate Registry**.
 
@@ -140,7 +140,7 @@ To support this safely without database RCE risks, you map the `predicate_key` t
 
 ```python
 # src/satellite/rules.py
-from constraints import Check
+from validated import Check
 
 # Parameterized predicate factories
 PREDICATE_FACTORIES = {
@@ -154,7 +154,7 @@ PREDICATE_FACTORIES = {
     "battery_is_charging": lambda params: (lambda status: status == "charging"),
 }
 
-def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
+def load_constraint(constraint_type: str, parameters: dict) -> Validator:
     if constraint_type == "Check":
         pred_key = parameters.get("predicate_key")
         description = parameters.get("description")
@@ -167,7 +167,7 @@ def load_constraint(constraint_type: str, parameters: dict) -> Constraint:
         predicate = factory(parameters) # Generates the custom lambda securely!
         return Check(predicate, description)
         
-    cls = CONSTRAINT_REGISTRY.get(constraint_type)
+    cls = VALIDATOR_REGISTRY.get(constraint_type)
     return cls(**parameters)
 ```
 
@@ -191,9 +191,9 @@ Core logical rules built into the spacecraft's design that *never* change.
 
 ---
 
-## 7. Database Payloads for All Constraint Models
+## 7. Database Payloads for All Validator Models
 
-Here is the complete reference of how each of the 8 constraint types in the `constraints` library maps to the JSON `parameters` column in the database:
+Here is the complete reference of how each of the 8 constraint types in the `validated` library maps to the JSON `parameters` column in the database:
 
 ### 1. `GreaterThan`
 * **Python Representation**: `GreaterThan(threshold=0.0)`
@@ -229,19 +229,19 @@ Here is the complete reference of how each of the 8 constraint types in the `con
 
 ---
 
-## 8. Runtime Hot-Reloading in Docker (Proxy Constraint Pattern)
+## 8. Runtime Hot-Reloading in Docker (Proxy Validator Pattern)
 
 A major limitation of the **Before-Import Initialization** pattern is that Python decorators evaluate annotations exactly **once** (at import-time). 
 
 If your application is running inside a Docker container, modifying thresholds in the database will have **no effect** on the compiled functions unless you reboot the container/process. 
 
-To support real-time **hot-reloading without restarts**, we can implement a **Proxy Constraint Pattern**. Instead of binding the concrete database constraint to the decorator statically, we bind a static `Proxy` constraint that queries our in-memory cache dynamically on every execution call.
+To support real-time **hot-reloading without restarts**, we can implement a **Proxy Validator Pattern**. Instead of binding the concrete database constraint to the decorator statically, we bind a static `Proxy` constraint that queries our in-memory cache dynamically on every execution call.
 
 ```
 [ validate_slew_task() called ]
               │
               ▼ (decorator triggers check)
-[ ProxyConstraint.validate(value) ]
+[ ProxyValidator.validate(value) ]
               │
               ▼ (looks up current version)
 [ Fetch rules.get_rule(norad_id, context, param) ] ── (Can be updated live in memory!)
@@ -250,16 +250,16 @@ To support real-time **hot-reloading without restarts**, we can implement a **Pr
 [ LessThan(2.5).validate(value) ]
 ```
 
-### Step 1: Implement the `ProxyConstraint` Class
+### Step 1: Implement the `ProxyValidator` Class
 ```python
 # src/constraints/models.py or src/satellite/rules.py
-class ProxyConstraint(Constraint):
+class ProxyValidator(Validator):
     def __init__(self, context_name: str, parameter_name: str, get_active_sat_id_fn):
         self.context_name = context_name
         self.parameter_name = parameter_name
         self.get_active_sat_id_fn = get_active_sat_id_fn
 
-    def _get_active_constraint(self) -> Constraint:
+    def _get_active_constraint(self) -> Validator:
         # 1. Fetch current active spacecraft ID from thread/execution context
         norad_id = self.get_active_sat_id_fn()
         # 2. Fetch the active compiled constraint object from the memory cache
@@ -282,15 +282,15 @@ Because the proxy object itself is created once at class import-time, the decora
 # src/satellite/validation.py
 import contextvars
 from typing import Annotated
-from constraints import constrained
+from validated import validated
 
 # ContextVar tracking active satellite ID in the current execution thread
 active_sat_id = contextvars.ContextVar("active_sat_id")
 
 # Static proxies pointing to dynamic lookups
-slew_speed_proxy = ProxyConstraint("slew_task", "max_slew_speed", active_sat_id.get)
+slew_speed_proxy = ProxyValidator("slew_task", "max_slew_speed", active_sat_id.get)
 
-@constrained
+@validated
 def validate_slew_task(
     poi_name: str,
     max_slew_speed: Annotated[float, slew_speed_proxy],
@@ -299,7 +299,7 @@ def validate_slew_task(
 ```
 
 ### Step 3: Hot-Reloading Live in Memory
-When operators change database thresholds, the API triggers a refresh to update the `rules.ACTIVE_CONSTRAINTS` dictionary in memory:
+When operators change database thresholds, the API triggers a refresh to update the `rules.ACTIVE_VALIDATORS` dictionary in memory:
 
 ```python
 def on_database_update_event(db_connection):

@@ -1,5 +1,5 @@
 import numpy as np
-from constraints import ConstraintValidationError
+from validated import ValidationError
 from satellite.models import (
     BatteryState,
     SolarPanelState,
@@ -22,6 +22,17 @@ def print_header(title: str):
     print("=" * 80)
 
 
+def print_validation_error(e: ValidationError):
+    if len(e.errors) > 1:
+        print(f"  - Total violations: {len(e.errors)}")
+        for idx, err in enumerate(e.errors, 1):
+            print(f"    {idx}. Parameter '{err.parameter_name}': value={err.value!r}, violation={err.message}")
+    else:
+        print(f"  - Parameter in error: {e.parameter_name}")
+        print(f"  - Value received: {e.value!r}")
+        print(f"  - Violation details: {e.message}")
+
+
 def run_scenario(title: str, telemetry: SatelliteTelemetry):
     print_header(title)
     print(f"Mode: {telemetry.mode.upper()}")
@@ -34,11 +45,9 @@ def run_scenario(title: str, telemetry: SatelliteTelemetry):
     try:
         check_telemetry(telemetry)
         print("RESULT: [PASS] Telemetry successfully validated! All constraints SATISFIED.")
-    except ConstraintValidationError as e:
+    except ValidationError as e:
         print("RESULT: [FAIL] Telemetry validation FAILED!")
-        print(f"  - Parameter in error: {e.parameter_name}")
-        print(f"  - Value received: {e.value!r}")
-        print(f"  - Violation details: {e.message}")
+        print_validation_error(e)
     except Exception as e:
         print(f"RESULT: [ERROR] Unexpected exception: {type(e).__name__}: {e}")
 
@@ -180,6 +189,23 @@ def main():
     )
     run_scenario("Faulty ACS Reaction Wheel Speed DType", faulty_acs_dtype)
 
+    # 8.5. Charging Mode with Multiple Concurrent Failures
+    multiple_failures_charging = SatelliteTelemetry(
+        mode="charging",
+        battery=BatteryState(charge_level=40.0, status="discharging", temperature=22.0, current_draw=60.0), # low charge level, wrong status
+        panels=[
+            SolarPanelState(deployed=True, power_generated=10.0),
+            SolarPanelState(deployed=False, power_generated=0.0), # One folded panel (total 10W gen < 60W draw = negative net power)
+        ],
+        acs=ACSState(
+            reaction_wheel_speeds=np.array([1200.0, -800.0, 450.0], dtype=np.float64),
+            momentum_wheel_speed=3000.0,
+            pointing_deviation=6.5, # deviation >= 5.0
+        ),
+        comms=CommsState(ground_station_visible=False, signal_strength=-90.0),
+    )
+    run_scenario("Charging Mode with Multiple Failures", multiple_failures_charging)
+
     # 9. Selective validation demo (Full vs Type-only vs Bypassed)
     print_header("Selective Validation Diagnostic Scenarios")
     
@@ -198,9 +224,7 @@ def main():
         validate_subsystem_diagnostics("INVALID-ID", 12.4, {"voltage": 28.5})
     except ConstraintValidationError as e:
         print(f"RESULT: [FAIL] Telemetry validation FAILED!")
-        print(f"  - Parameter in error: {e.parameter_name}")
-        print(f"  - Value received: {e.value!r}")
-        print(f"  - Violation details: {e.message}")
+        print_validation_error(e)
 
     # 9c. Failing type coercion (Type-only validation parameter not a float)
     print("-" * 80)
@@ -209,9 +233,7 @@ def main():
         validate_subsystem_diagnostics("PWR-002", "not-a-float", {"voltage": 28.5})
     except ConstraintValidationError as e:
         print(f"RESULT: [FAIL] Telemetry validation FAILED!")
-        print(f"  - Parameter in error: {e.parameter_name}")
-        print(f"  - Value received: {e.value!r}")
-        print(f"  - Violation details: {e.message}")
+        print_validation_error(e)
 
     # 10. Pre-Commit Task Validation Demo (Slew speed and Coverage constraints)
     print_header("Pre-Commit Task Validation Scenarios")
@@ -247,9 +269,7 @@ def main():
         validate_task(slew_too_fast)
     except ConstraintValidationError as e:
         print("RESULT: [FAIL] Slew task REJECTED! Violation of safety threshold.")
-        print(f"  - Safety rule violated: {e.parameter_name}")
-        print(f"  - Value received: {e.value!r}")
-        print(f"  - Constraint message: {e.message}")
+        print_validation_error(e)
 
     # 10c. Slew Task with poor coverage
     print("-" * 80)
@@ -266,11 +286,24 @@ def main():
         validate_task(slew_low_coverage)
     except ConstraintValidationError as e:
         print("RESULT: [FAIL] Slew task REJECTED! Violation of safety threshold.")
-        print(f"  - Safety rule violated: {e.parameter_name}")
-        print(f"  - Value received: {e.value!r}")
-        print(f"  - Constraint message: {e.message}")
+        print_validation_error(e)
 
-
+    # 10d. Slew Task with Multiple Violations (speed too high and coverage too low)
+    print("-" * 80)
+    slew_multiple_fails = SlewTask(
+        poi_name="Sydney_Station",
+        target_yaw=45.2,
+        target_pitch=-10.5,
+        duration_seconds=5.0,
+        max_predicted_slew_speed=3.5, # 3.5 deg/s > 2.0 limit!
+        predicted_coverage=75.0,      # 75% < 80% min required!
+    )
+    try:
+        print(f"Validating SlewTask to {slew_multiple_fails.poi_name} (speed={slew_multiple_fails.max_predicted_slew_speed} deg/s, coverage={slew_multiple_fails.predicted_coverage}%)")
+        validate_task(slew_multiple_fails)
+    except ConstraintValidationError as e:
+        print("RESULT: [FAIL] Slew task REJECTED! Violation of safety threshold.")
+        print_validation_error(e)
 
 
 if __name__ == "__main__":
