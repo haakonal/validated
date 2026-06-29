@@ -1,5 +1,6 @@
 from typing import Any
 
+
 class ValidationError(ValueError):
     """Exception raised when one or more parameters or return value violates a validator."""
 

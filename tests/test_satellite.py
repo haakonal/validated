@@ -1,20 +1,21 @@
-import pytest
 import numpy as np
-from validated import ValidationError
+import pytest
+
 from satellite.models import (
-    BatteryState,
-    SolarPanelState,
     ACSState,
+    BatteryState,
     CommsState,
+    ImagingTask,
     SatelliteTelemetry,
     SlewTask,
-    ImagingTask,
+    SolarPanelState,
 )
 from satellite.validation import (
     check_telemetry,
     validate_subsystem_diagnostics,
     validate_task,
 )
+from validated import ValidationError
 
 
 def test_valid_charging_mode():
@@ -150,32 +151,25 @@ def test_data_collection_mode_violations():
 
 
 def test_acs_numpy_constraints():
+    from pydantic import ValidationError as PydanticValidationError
+
     # Shape mismatch (4 dimensions instead of 3)
-    telemetry = SatelliteTelemetry(
-        mode="data_collection",
-        battery=BatteryState(charge_level=90.0, status="discharging", temperature=15.0, current_draw=80.0),
-        panels=[
-            SolarPanelState(deployed=True, power_generated=0.0),
-            SolarPanelState(deployed=True, power_generated=0.0),
-        ],
-        acs=ACSState(
+    with pytest.raises(PydanticValidationError) as excinfo:
+        ACSState(
             reaction_wheel_speeds=np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64),
             momentum_wheel_speed=2000.0,
             pointing_deviation=0.8,
-        ),
-        comms=CommsState(ground_station_visible=True, signal_strength=-70.0),
-    )
-    with pytest.raises(ValidationError) as excinfo:
-        check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "wheel_speeds"
-    assert "does not match expected shape" in excinfo.value.message
+        )
+    assert "does not match expected shape" in str(excinfo.value)
 
     # DType mismatch (float32 instead of float64)
-    telemetry.acs.reaction_wheel_speeds = np.array([100.0, 200.0, 300.0], dtype=np.float32)
-    with pytest.raises(ValidationError) as excinfo:
-        check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "wheel_speeds"
-    assert "does not match expected dtype" in excinfo.value.message
+    with pytest.raises(PydanticValidationError) as excinfo:
+        ACSState(
+            reaction_wheel_speeds=np.array([100.0, 200.0, 300.0], dtype=np.float32),
+            momentum_wheel_speed=2000.0,
+            pointing_deviation=0.8,
+        )
+    assert "does not match expected dtype" in str(excinfo.value)
 
 
 def test_selective_validation():
@@ -208,12 +202,13 @@ def test_task_validation():
         target_pitch=-45.0,
         duration_seconds=30.0,
         max_predicted_slew_speed=1.5,  # 1.5 < 2.0
-        predicted_coverage=92.5,       # 92.5 in [80.0, 100.0]
+        predicted_coverage=92.5,  # 92.5 in [80.0, 100.0]
     )
     assert validate_task(valid_slew) is True
 
     # 2. Slew Task with exceeded slew speed — fails at construction time
     from pydantic import ValidationError as PydanticValidationError
+
     with pytest.raises(PydanticValidationError) as excinfo:
         SlewTask(
             poi_name="Paris_Observation",
@@ -233,15 +228,15 @@ def test_task_validation():
             target_pitch=-45.0,
             duration_seconds=30.0,
             max_predicted_slew_speed=1.5,
-            predicted_coverage=75.0,       # 75.0 < 80.0! (Violates InRange(80.0, 100.0))
+            predicted_coverage=75.0,  # 75.0 < 80.0! (Violates InRange(80.0, 100.0))
         )
     assert "must be in range [80.0, 100.0]" in str(excinfo.value)
 
     # 4. Valid Imaging Task — construction succeeds
     valid_imaging = ImagingTask(
         target_poi="London_POI",
-        exposure_time=1.2,             # in [0.01, 5.0]
-        cloud_cover_limit=15.0,        # < 20.0
+        exposure_time=1.2,  # in [0.01, 5.0]
+        cloud_cover_limit=15.0,  # < 20.0
         spectral_bands=["Red", "Green", "Blue", "NIR"],  # length 4, in [1, 5]
     )
     assert validate_task(valid_imaging) is True
@@ -252,7 +247,13 @@ def test_task_validation():
             target_poi="London_POI",
             exposure_time=1.2,
             cloud_cover_limit=15.0,
-            spectral_bands=["Band1", "Band2", "Band3", "Band4", "Band5", "Band6"],  # 6 bands > 5!
+            spectral_bands=[
+                "Band1",
+                "Band2",
+                "Band3",
+                "Band4",
+                "Band5",
+                "Band6",
+            ],  # 6 bands > 5!
         )
     assert "length must be between 1 and 5" in str(excinfo.value)
-

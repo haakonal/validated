@@ -1,8 +1,11 @@
 import functools
 import inspect
 import typing
-from typing import get_origin, get_args, Annotated, Any, Callable
+from collections.abc import Callable
+from typing import Annotated, Any, get_args, get_origin
+
 from pydantic import TypeAdapter
+
 from validated.exceptions import ValidationError
 from validated.models import Validator, ValidatorCheckError
 
@@ -10,6 +13,7 @@ from validated.models import Validator, ValidatorCheckError
 # array validators simply won't match non-ndarray values.
 try:
     import numpy as np
+
     _NDARRAY_TYPE: type | None = np.ndarray
 except ImportError:
     np = None  # type: ignore[assignment]
@@ -19,7 +23,7 @@ except ImportError:
 class _ParamSpec:
     """Pre-compiled validation metadata for a single parameter."""
 
-    __slots__ = ("type_adapter", "validators", "kind", "is_ndarray")
+    __slots__ = ("is_ndarray", "kind", "type_adapter", "validators")
 
     def __init__(
         self,
@@ -49,10 +53,7 @@ def _compile_param(annotation: Any, kind: inspect._ParameterKind) -> _ParamSpec:
     if base_type is inspect.Parameter.empty or base_type is Any:
         return _ParamSpec(None, validators, kind, is_ndarray=False)
 
-    if _NDARRAY_TYPE is not None and (
-        base_type is _NDARRAY_TYPE
-        or getattr(base_type, "__name__", None) == "ndarray"
-    ):
+    if _NDARRAY_TYPE is not None and (base_type is _NDARRAY_TYPE or getattr(base_type, "__name__", None) == "ndarray"):
         return _ParamSpec(None, validators, kind, is_ndarray=True)
 
     # Build the TypeAdapter once — this is the expensive Pydantic compilation step
@@ -80,7 +81,7 @@ def _validate_value(val: Any, spec: _ParamSpec, param_name: str) -> Any:
                 value=val,
                 validator=None,
                 message=f"type validation failed: {e}",
-            )
+            ) from e
     else:
         coerced = val
 

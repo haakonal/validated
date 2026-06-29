@@ -1,24 +1,28 @@
+# from pydantic import PydanticSchemaGenerationError
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
+
 import numpy as np
-from pydantic import GetCoreSchemaHandler
+from pydantic import BaseModel, ConfigDict, GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
+
+
+class ValidatorBaseModel(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
 
 
 class Validator(ABC):
     """Base class for all validators."""
 
     @abstractmethod
-    def validate(self, value: Any) -> bool:
-        ...
+    def validate(self, value: Any) -> bool: ...
 
     def error_message(self, value: Any) -> str:
         return f"Value {value!r} does not satisfy {self.__class__.__name__}"
 
-    def __get_pydantic_core_schema__(
-        self, source_type: Any, handler: GetCoreSchemaHandler
-    ) -> CoreSchema:
+    def __get_pydantic_core_schema__(self, source_type: Any, handler: GetCoreSchemaHandler) -> CoreSchema:
         """Hook into Pydantic v2 so this validator works as Annotated metadata on BaseModel fields."""
         schema = handler(source_type)
 
@@ -184,7 +188,7 @@ class Shape(Validator):
             return False
         if len(value.shape) != len(self.dims):
             return False
-        for expected, actual in zip(self.dims, value.shape):
+        for expected, actual in zip(self.dims, value.shape, strict=False):
             if expected is None or expected == "*" or expected == -1:
                 continue
             if isinstance(expected, str) and expected.isdigit():

@@ -3,32 +3,34 @@ from typing import Annotated
 from validated.decorator import validated
 from validated.exceptions import ValidationError
 from validated.models import (
-    Validator,
-    ValidatorCheckError,
+    Check,
+    DType,
     GreaterThan,
-    LessThan,
     InRange,
     Length,
+    LessThan,
     MatchesPattern,
-    Check,
     Shape,
-    DType,
+    Validator,
+    ValidatorBaseModel,
+    ValidatorCheckError,
 )
 
 Validated = Annotated
 
 __all__ = [
-    "validated",
-    "Validated",
-    "Validator",
-    "ValidatorCheckError",
+    "Check",
+    "DType",
     "GreaterThan",
-    "LessThan",
     "InRange",
     "Length",
+    "LessThan",
     "MatchesPattern",
-    "Check",
     "Shape",
-    "DType",
+    "Validated",
     "ValidationError",
+    "Validator",
+    "ValidatorBaseModel",
+    "ValidatorCheckError",
+    "validated",
 ]

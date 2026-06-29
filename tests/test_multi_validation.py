@@ -1,12 +1,15 @@
 from typing import Annotated
+
 import pytest
+
 from validated import (
-    validated,
-    ValidationError,
     GreaterThan,
-    LessThan,
     InRange,
+    LessThan,
+    ValidationError,
+    validated,
 )
+
 
 def test_single_parameter_failure_compatibility():
     @validated
@@ -15,7 +18,7 @@ def test_single_parameter_failure_compatibility():
 
     with pytest.raises(ValidationError) as excinfo:
         func(-5)
-    
+
     assert excinfo.value.parameter_name == "a"
     assert excinfo.value.value == -5
     assert isinstance(excinfo.value.validator, GreaterThan)
@@ -114,7 +117,7 @@ def test_mixed_parameter_failures():
         x: Annotated[int, GreaterThan(10)],
         *args: Annotated[int, LessThan(0)],
         y: Annotated[float, InRange(0.0, 1.0)] = 0.5,
-        **kwargs: Annotated[str, InRange("a", "m")], # String InRange comparison
+        **kwargs: Annotated[str, InRange("a", "m")],  # String InRange comparison
     ):
         return x, args, y, kwargs
 

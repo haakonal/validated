@@ -1,20 +1,21 @@
-import re
-from typing import Annotated, Optional
-import pytest
+from typing import Annotated
+
 import numpy as np
+import pytest
 
 from validated import (
-    validated,
-    ValidationError,
+    Check,
+    DType,
     GreaterThan,
-    LessThan,
     InRange,
     Length,
+    LessThan,
     MatchesPattern,
-    Check,
     Shape,
-    DType,
+    ValidationError,
+    validated,
 )
+
 
 # 1. Test basic coercion and validation
 def test_coercion_and_basic_validation():
@@ -86,7 +87,10 @@ def test_string_and_collection_validators():
         return username, email
 
     # Valid inputs
-    assert process_strings("alice", "alice@example.com") == ("alice", "alice@example.com")
+    assert process_strings("alice", "alice@example.com") == (
+        "alice",
+        "alice@example.com",
+    )
 
     # Length violation (too short)
     with pytest.raises(ValidationError) as excinfo:
@@ -141,7 +145,7 @@ def test_numpy_validators():
 
     # Not an array
     with pytest.raises(ValidationError) as excinfo:
-        process_array("not-an-array", v) # type: ignore
+        process_array("not-an-array", v)  # type: ignore
     assert excinfo.value.parameter_name == "arr"
     assert "value is not a NumPy array" in excinfo.value.message
 
@@ -196,7 +200,10 @@ def test_var_args_and_kwargs():
         return items, options
 
     # Valid
-    assert process_many(1, 2, 3, alpha=0.5, beta=0.8) == ((1, 2, 3), {"alpha": 0.5, "beta": 0.8})
+    assert process_many(1, 2, 3, alpha=0.5, beta=0.8) == (
+        (1, 2, 3),
+        {"alpha": 0.5, "beta": 0.8},
+    )
 
     # Coerced
     assert process_many("1", "2", alpha="0.5") == ((1, 2), {"alpha": 0.5})
@@ -218,6 +225,7 @@ def test_var_args_and_kwargs():
 def test_matches_pattern_fullmatch():
     """Verify that MatchesPattern requires the ENTIRE string to match,
     not just the beginning (fullmatch semantics vs match semantics)."""
+
     @validated
     def process(code: Annotated[str, MatchesPattern(r"\d{3}")]):
         return code
@@ -268,7 +276,9 @@ def test_validator_equality():
     assert MatchesPattern(r"\d+") != MatchesPattern(r"\w+")
 
     # Check equality uses identity for predicates (lambdas are unique objects)
-    pred = lambda x: x > 0
+    def pred(x):
+        return x > 0
+
     assert Check(pred, "pos") == Check(pred, "pos")
     assert Check(pred, "pos") != Check(pred, "different desc")
     assert Check(pred, "pos") != Check(lambda x: x > 0, "pos")  # different lambda object

@@ -34,7 +34,7 @@ dev = [
 packages = ["src/validated", "src/satellite"]
 
 [tool.ruff]
-line-length = 88
+line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -43,7 +43,7 @@ select = [
     "W",   # pycodestyle warnings
     "F",   # pyflakes
     "I",   # isort (import sorting)
-    "C90", # mccabe complexity
+    # "C90", # mccabe complexity
     "N",   # pep8-naming
     "UP",  # pyupgrade
     "B",   # flake8-bugbear

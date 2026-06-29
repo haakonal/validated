@@ -1,26 +1,29 @@
-"""Tests for Pydantic BaseModel integration.
+"""Tests for Pydantic ValidatorBaseModel integration.
 
 Verifies that our Validator classes work natively as Annotated metadata
-on Pydantic BaseModel fields via __get_pydantic_core_schema__.
+on ValidatorBaseModel fields via __get_pydantic_core_schema__.
 """
+
 from typing import Annotated
+
 import pytest
-from pydantic import BaseModel, ValidationError as PydanticValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from validated import (
-    Validated,
+    Check,
     GreaterThan,
-    LessThan,
     InRange,
     Length,
+    LessThan,
     MatchesPattern,
-    Check,
+    Validated,
+    ValidatorBaseModel,
 )
 
+# --- 1. Basic numeric validators on a ValidatorBaseModel ---
 
-# --- 1. Basic numeric validators on a BaseModel ---
 
-class NumericConfig(BaseModel):
+class NumericConfig(ValidatorBaseModel):
     positive: Annotated[int, GreaterThan(0)]
     negative: Annotated[float, LessThan(0.0)]
     percent: Annotated[float, InRange(0.0, 100.0)]
@@ -57,9 +60,27 @@ def test_in_range_violation_too_high():
     assert "must be in range [0.0, 100.0]" in str(excinfo.value)
 
 
-# --- 2. String validators on a BaseModel ---
+def test_validate_assignment():
+    config = NumericConfig(positive=5, negative=-2.5, percent=50.0)
 
-class StringConfig(BaseModel):
+    # Valid assignment should work
+    config.positive = 10
+    assert config.positive == 10
+
+    # Invalid assignment should raise PydanticValidationError
+    with pytest.raises(PydanticValidationError) as excinfo:
+        config.positive = -5
+    assert "must be greater than 0" in str(excinfo.value)
+
+    with pytest.raises(PydanticValidationError) as excinfo:
+        config.percent = 150.0
+    assert "must be in range [0.0, 100.0]" in str(excinfo.value)
+
+
+# --- 2. String validators on a ValidatorBaseModel ---
+
+
+class StringConfig(ValidatorBaseModel):
     username: Annotated[str, Length(min_len=3, max_len=10)]
     subsystem_id: Annotated[str, MatchesPattern(r"^(ACS|PWR|COM)-\d{3}$")]
 
@@ -88,9 +109,10 @@ def test_pattern_violation():
     assert "must match pattern" in str(excinfo.value)
 
 
-# --- 3. Custom Check validator on a BaseModel ---
+# --- 3. Custom Check validator on a ValidatorBaseModel ---
 
-class EvenConfig(BaseModel):
+
+class EvenConfig(ValidatorBaseModel):
     value: Annotated[int, Check(lambda v: v % 2 == 0, "must be even")]
 
 
@@ -107,7 +129,8 @@ def test_check_validator_violation():
 
 # --- 4. Multiple validators on a single field ---
 
-class MultiValidatorConfig(BaseModel):
+
+class MultiValidatorConfig(ValidatorBaseModel):
     score: Annotated[float, GreaterThan(0.0), LessThan(100.0)]
 
 
@@ -130,7 +153,8 @@ def test_multi_validator_second_fails():
 
 # --- 5. Using the Validated alias ---
 
-class AliasConfig(BaseModel):
+
+class AliasConfig(ValidatorBaseModel):
     speed: Validated[float, LessThan(2.0)]
     charge: Validated[float, InRange(50.0, 100.0)]
 
@@ -149,7 +173,8 @@ def test_validated_alias_violation():
 
 # --- 6. Pydantic type coercion still works ---
 
-class CoercionConfig(BaseModel):
+
+class CoercionConfig(ValidatorBaseModel):
     count: Annotated[int, GreaterThan(0)]
 
 
