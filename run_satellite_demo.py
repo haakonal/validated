@@ -16,40 +16,77 @@ from satellite.validation import (
 )
 
 
+# ANSI escape codes for styling console output
+RESET = "\033[0m"
+BOLD = "\033[1m"
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+MAGENTA = "\033[95m"
+CYAN = "\033[96m"
+
 def print_header(title: str):
-    print("\n" + "=" * 80)
-    print(f" SCENARIO: {title}".center(80))
-    print("=" * 80)
+    banner = f"🛰️  SCENARIO: {title} "
+    print(f"\n{BOLD}{CYAN}{'=' * 80}")
+    print(f"{banner.center(80)}")
+    print(f"{'=' * 80}{RESET}")
 
 
 def print_validation_error(e: ValidationError):
     if len(e.errors) > 1:
-        print(f"  - Total violations: {len(e.errors)}")
+        print(f"  {BOLD}{RED}❌ Total Violations: {len(e.errors)}{RESET}")
         for idx, err in enumerate(e.errors, 1):
-            print(f"    {idx}. Parameter '{err.parameter_name}': value={err.value!r}, violation={err.message}")
+            print(f"    {BOLD}{RED}{idx}.{RESET} Parameter {BOLD}{YELLOW}'{err.parameter_name}'{RESET}: "
+                  f"value={BOLD}{RED}{err.value!r}{RESET}, violation={YELLOW}{err.message}{RESET}")
     else:
-        print(f"  - Parameter in error: {e.parameter_name}")
-        print(f"  - Value received: {e.value!r}")
-        print(f"  - Violation details: {e.message}")
+        print(f"  • Parameter in error: {BOLD}{YELLOW}{e.parameter_name}{RESET}")
+        print(f"  • Value received:     {BOLD}{RED}{e.value!r}{RESET}")
+        print(f"  • Violation details:  {YELLOW}{e.message}{RESET}")
 
 
 def run_scenario(title: str, telemetry: SatelliteTelemetry):
     print_header(title)
-    print(f"Mode: {telemetry.mode.upper()}")
-    print(f"Battery: charge={telemetry.battery.charge_level}%, status={telemetry.battery.status}, temp={telemetry.battery.temperature} C, draw={telemetry.battery.current_draw} W")
-    print(f"Solar Panels: {[('Deployed' if p.deployed else 'Folded', f'{p.power_generated}W') for p in telemetry.panels]}")
-    print(f"ACS: pointing_dev={telemetry.acs.pointing_deviation} deg, reaction_wheel_speeds={telemetry.acs.reaction_wheel_speeds.tolist()}")
-    print(f"Comms: visible={telemetry.comms.ground_station_visible}")
-    print("-" * 80)
+    
+    # Format Mode with color coding
+    mode_color = CYAN if telemetry.mode == "charging" else (MAGENTA if telemetry.mode == "data_collection" else YELLOW)
+    print(f"{BOLD}📊 TELEMETRY STATUS:{RESET}")
+    print(f"  • {BOLD}Operational Mode:{RESET} {mode_color}{telemetry.mode.upper()}{RESET}")
+    
+    # Format Battery State
+    bat = telemetry.battery
+    bat_status_color = GREEN if bat.status == "charging" else (YELLOW if bat.status == "discharging" else RESET)
+    print(f"  • {BOLD}Power & Battery:{RESET} charge={BOLD}{bat.charge_level}%{RESET} | "
+          f"status={bat_status_color}{bat.status}{RESET} | "
+          f"temp={bat.temperature}°C | draw={bat.current_draw}W")
+    
+    # Format Solar Panels
+    panels_str = []
+    for p in telemetry.panels:
+        state = f"{GREEN}Deployed{RESET}" if p.deployed else f"{RED}Folded{RESET}"
+        panels_str.append(f"[{state} ({p.power_generated}W)]")
+    print(f"  • {BOLD}Solar Array:{RESET} " + " ".join(panels_str))
+    
+    # Format ACS System
+    acs = telemetry.acs
+    print(f"  • {BOLD}ACS State:{RESET} pointing_dev={BOLD}{acs.pointing_deviation}°{RESET} | "
+          f"momentum_wheel={acs.momentum_wheel_speed} rpm | "
+          f"reaction_wheels={acs.reaction_wheel_speeds.tolist()}")
+    
+    # Format Comms
+    comms = telemetry.comms
+    comms_status = f"{GREEN}VISIBLE{RESET}" if comms.ground_station_visible else f"{RED}OUT OF RANGE{RESET}"
+    print(f"  • {BOLD}Communications:{RESET} ground_station={comms_status} | signal={comms.signal_strength} dBm")
+    print(f"{CYAN}{'-' * 80}{RESET}")
     
     try:
         check_telemetry(telemetry)
-        print("RESULT: [PASS] Telemetry successfully validated! All constraints SATISFIED.")
+        print(f"{BOLD}{GREEN}🟢 [PASS] Telemetry successfully validated! All constraints SATISFIED.{RESET}")
     except ValidationError as e:
-        print("RESULT: [FAIL] Telemetry validation FAILED!")
+        print(f"{BOLD}{RED}🔴 [FAIL] Telemetry validation FAILED!{RESET}")
         print_validation_error(e)
     except Exception as e:
-        print(f"RESULT: [ERROR] Unexpected exception: {type(e).__name__}: {e}")
+        print(f"{BOLD}{RED}💥 [ERROR] Unexpected exception: {type(e).__name__}: {e}{RESET}")
 
 
 def main():
@@ -211,28 +248,28 @@ def main():
     
     # 9a. Successful case
     try:
-        print("Running validate_subsystem_diagnostics('PWR-002', '12.4', {'voltage': 28.5})")
+        print(f"Running {BOLD}validate_subsystem_diagnostics('PWR-002', '12.4', {{'voltage': 28.5}}){RESET}...")
         validate_subsystem_diagnostics("PWR-002", "12.4", {"voltage": 28.5})
-        print("RESULT: [PASS] All inputs validated and coerced successfully!")
+        print(f"RESULT: {BOLD}{GREEN}🟢 [PASS] All inputs validated and coerced successfully!{RESET}")
     except ValidationError as e:
-        print(f"RESULT: [FAIL] {e}")
+        print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Validation failed: {e}{RESET}")
         
     # 9b. Failing constraint check (Full validation parameter pattern mismatch)
-    print("-" * 80)
+    print(f"{CYAN}{'-' * 80}{RESET}")
     try:
-        print("Running validate_subsystem_diagnostics('INVALID-ID', 12.4, {'voltage': 28.5})")
+        print(f"Running {BOLD}validate_subsystem_diagnostics('INVALID-ID', 12.4, {{'voltage': 28.5}}){RESET}...")
         validate_subsystem_diagnostics("INVALID-ID", 12.4, {"voltage": 28.5})
     except ValidationError as e:
-        print(f"RESULT: [FAIL] Telemetry validation FAILED!")
+        print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Diagnostics validation FAILED!{RESET}")
         print_validation_error(e)
 
     # 9c. Failing type coercion (Type-only validation parameter not a float)
-    print("-" * 80)
+    print(f"{CYAN}{'-' * 80}{RESET}")
     try:
-        print("Running validate_subsystem_diagnostics('PWR-002', 'not-a-float', {'voltage': 28.5})")
+        print(f"Running {BOLD}validate_subsystem_diagnostics('PWR-002', 'not-a-float', {{'voltage': 28.5}}){RESET}...")
         validate_subsystem_diagnostics("PWR-002", "not-a-float", {"voltage": 28.5})
     except ValidationError as e:
-        print(f"RESULT: [FAIL] Telemetry validation FAILED!")
+        print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Diagnostics validation FAILED!{RESET}")
         print_validation_error(e)
 
     # With Pydantic integration, tasks are validated at construction time.
@@ -242,6 +279,7 @@ def main():
 
     # 10a. Successful Slew Task — construction passes
     try:
+        print(f"Attempting to construct healthy SlewTask (Sydney_Station, speed=1.2, coverage=88.5%)...")
         slew_ok = SlewTask(
             poi_name="Sydney_Station",
             target_yaw=45.2,
@@ -250,15 +288,15 @@ def main():
             max_predicted_slew_speed=1.2, # 1.2 deg/s < 2.0 limit
             predicted_coverage=88.5,      # 88.5% in [80.0, 100.0]
         )
-        print(f"Validating SlewTask to {slew_ok.poi_name} (speed={slew_ok.max_predicted_slew_speed} deg/s, coverage={slew_ok.predicted_coverage}%)")
-        print("RESULT: [PASS] Slew task passes pre-commit checks! Ready to upload to command queue.")
+        print(f"Validating SlewTask to {BOLD}{slew_ok.poi_name}{RESET} (speed={slew_ok.max_predicted_slew_speed} deg/s, coverage={slew_ok.predicted_coverage}%)")
+        print(f"RESULT: {BOLD}{GREEN}🟢 [PASS] Slew task passes pre-commit checks! Ready to upload to command queue.{RESET}")
     except PydanticValidationError as e:
-        print(f"RESULT: [FAIL] Slew task rejected at construction:\n{e}")
+        print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Slew task rejected at construction:\n{e}{RESET}")
 
     # 10b. Slew Task exceeding speed limit — fails at construction
-    print("-" * 80)
+    print(f"{CYAN}{'-' * 80}{RESET}")
     try:
-        print("Attempting SlewTask with speed=3.1 deg/s (limit: 2.0 deg/s)...")
+        print(f"Attempting to construct SlewTask with {BOLD}speed=3.1 deg/s{RESET} (limit: 2.0 deg/s)...")
         slew_too_fast = SlewTask(
             poi_name="Sydney_Station",
             target_yaw=45.2,
@@ -268,13 +306,13 @@ def main():
             predicted_coverage=95.0,
         )
     except PydanticValidationError as e:
-        print("RESULT: [FAIL] Slew task REJECTED at construction! Pydantic caught the violation:")
-        print(f"  {e}")
+        print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Slew task REJECTED at construction! Pydantic caught the violation:{RESET}")
+        print(f"{YELLOW}{e}{RESET}")
 
     # 10c. Slew Task with poor coverage — fails at construction
-    print("-" * 80)
+    print(f"{CYAN}{'-' * 80}{RESET}")
     try:
-        print("Attempting SlewTask with coverage=71.2% (minimum: 80.0%)...")
+        print(f"Attempting to construct SlewTask with {BOLD}coverage=71.2%{RESET} (minimum: 80.0%)...")
         slew_low_coverage = SlewTask(
             poi_name="Sydney_Station",
             target_yaw=45.2,
@@ -284,13 +322,13 @@ def main():
             predicted_coverage=71.2,      # 71.2% < 80.0% min required!
         )
     except PydanticValidationError as e:
-        print("RESULT: [FAIL] Slew task REJECTED at construction! Pydantic caught the violation:")
-        print(f"  {e}")
+        print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Slew task REJECTED at construction! Pydantic caught the violation:{RESET}")
+        print(f"{YELLOW}{e}{RESET}")
 
     # 10d. Slew Task with Multiple Violations — Pydantic reports all errors at once
-    print("-" * 80)
+    print(f"{CYAN}{'-' * 80}{RESET}")
     try:
-        print("Attempting SlewTask with speed=3.5 AND coverage=75.0% (both violate limits)...")
+        print(f"Attempting to construct SlewTask with {BOLD}speed=3.5 AND coverage=75.0%{RESET} (both violate limits)...")
         slew_multiple_fails = SlewTask(
             poi_name="Sydney_Station",
             target_yaw=45.2,
@@ -300,8 +338,9 @@ def main():
             predicted_coverage=75.0,      # 75% < 80% min required!
         )
     except PydanticValidationError as e:
-        print("RESULT: [FAIL] Slew task REJECTED at construction! Multiple violations detected:")
-        print(f"  {e}")
+        print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Slew task REJECTED at construction! Multiple violations detected:{RESET}")
+        print(f"{YELLOW}{e}{RESET}")
+
 
 
 if __name__ == "__main__":
