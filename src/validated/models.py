@@ -2,10 +2,12 @@ import re
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Sequence
 import numpy as np
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import CoreSchema, core_schema
 
 
-class Constraint(ABC):
-    """Base class for all constraints."""
+class Validator(ABC):
+    """Base class for all validators."""
 
     @abstractmethod
     def validate(self, value: Any) -> bool:
@@ -14,8 +16,21 @@ class Constraint(ABC):
     def error_message(self, value: Any) -> str:
         return f"Value {value!r} does not satisfy {self.__class__.__name__}"
 
+    def __get_pydantic_core_schema__(
+        self, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        """Hook into Pydantic v2 so this validator works as Annotated metadata on BaseModel fields."""
+        schema = handler(source_type)
 
-class GreaterThan(Constraint):
+        def _after_validate(value: Any) -> Any:
+            if not self.validate(value):
+                raise ValueError(self.error_message(value))
+            return value
+
+        return core_schema.no_info_after_validator_function(_after_validate, schema)
+
+
+class GreaterThan(Validator):
     def __init__(self, threshold: Any):
         self.threshold = threshold
 
@@ -32,7 +47,7 @@ class GreaterThan(Constraint):
         return isinstance(other, GreaterThan) and self.threshold == other.threshold
 
 
-class LessThan(Constraint):
+class LessThan(Validator):
     def __init__(self, threshold: Any):
         self.threshold = threshold
 
@@ -49,7 +64,7 @@ class LessThan(Constraint):
         return isinstance(other, LessThan) and self.threshold == other.threshold
 
 
-class InRange(Constraint):
+class InRange(Validator):
     def __init__(self, min_val: Any, max_val: Any):
         self.min_val = min_val
         self.max_val = max_val
@@ -67,7 +82,7 @@ class InRange(Constraint):
         return isinstance(other, InRange) and self.min_val == other.min_val and self.max_val == other.max_val
 
 
-class Length(Constraint):
+class Length(Validator):
     def __init__(self, min_len: int | None = None, max_len: int | None = None):
         self.min_len = min_len
         self.max_len = max_len
@@ -99,7 +114,7 @@ class Length(Constraint):
         return isinstance(other, Length) and self.min_len == other.min_len and self.max_len == other.max_len
 
 
-class MatchesPattern(Constraint):
+class MatchesPattern(Validator):
     def __init__(self, pattern: str | re.Pattern[str]):
         if isinstance(pattern, str):
             self.regex = re.compile(pattern)
@@ -121,7 +136,7 @@ class MatchesPattern(Constraint):
         return isinstance(other, MatchesPattern) and self.regex.pattern == other.regex.pattern
 
 
-class Check(Constraint):
+class Check(Validator):
     def __init__(self, predicate: Callable[[Any], bool], description: str | None = None):
         self.predicate = predicate
         self.description = description or getattr(predicate, "__name__", None) or "custom predicate"
@@ -130,7 +145,7 @@ class Check(Constraint):
         try:
             return bool(self.predicate(value))
         except Exception as exc:
-            raise ConstraintCheckError(
+            raise ValidatorCheckError(
                 f"Predicate '{self.description}' raised {type(exc).__name__}: {exc}",
                 original_exception=exc,
             ) from exc
@@ -145,7 +160,7 @@ class Check(Constraint):
         return isinstance(other, Check) and self.predicate is other.predicate and self.description == other.description
 
 
-class ConstraintCheckError(Exception):
+class ValidatorCheckError(Exception):
     """Raised when a Check predicate itself throws an exception during evaluation."""
 
     def __init__(self, message: str, original_exception: Exception):
@@ -153,7 +168,7 @@ class ConstraintCheckError(Exception):
         self.original_exception = original_exception
 
 
-class Shape(Constraint):
+class Shape(Validator):
     dims: tuple[int | str | None, ...]
 
     def __init__(self, *dims: int | str | None | Sequence[int | str | None]):
@@ -190,7 +205,7 @@ class Shape(Constraint):
         return isinstance(other, Shape) and self.dims == other.dims
 
 
-class DType(Constraint):
+class DType(Validator):
     def __init__(self, dtype: Any):
         self.expected_dtype = np.dtype(dtype)
 

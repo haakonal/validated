@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "constraints"
+name = "validated"
 version = "0.1.0"
 description = "A data validation and constraint enforcement library using Pydantic and NumPy"
 readme = "README.md"
@@ -25,12 +25,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/constraints", "src/satellite"]
+packages = ["src/validated", "src/satellite"]
 
 [tool.ruff]
 line-length = 88
@@ -52,7 +53,7 @@ select = [
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["constraints"]
+known-first-party = ["validated"]
 
 [tool.ruff.format]
 quote-style = "double"
