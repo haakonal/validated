@@ -1,5 +1,3 @@
-from typing import Annotated
-
 from validated.decorator import validated
 from validated.exceptions import ValidationError
 from validated.models import (

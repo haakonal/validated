@@ -34,7 +34,7 @@ class ValidationError(ValueError):
         if len(self.errors) > 1:
             first_param = self.errors[0].parameter_name
             same_param = all(err.parameter_name == first_param for err in self.errors)
-            
+
             if same_param:
                 msg = f"Validation failed for multiple constraints on parameter '{first_param}':\n" + "\n".join(
                     f"- {err.message}" for err in self.errors

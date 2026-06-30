@@ -202,3 +202,14 @@ def test_pydantic_coercion_then_validation_fails():
     with pytest.raises(PydanticValidationError) as excinfo:
         CoercionConfig(count="0")  # type: ignore
     assert "must be greater than 0" in str(excinfo.value)
+
+
+class CheckErrorConfig(ValidatorBaseModel):
+    value: Validated[int, GreaterThan(0), Check(lambda v: 1 / 0, "division by zero")]
+
+
+def test_multi_validator_check_error():
+    with pytest.raises(PydanticValidationError) as excinfo:
+        CheckErrorConfig(value=5)
+    err_str = str(excinfo.value)
+    assert "must satisfy custom check: division by zero" in err_str
