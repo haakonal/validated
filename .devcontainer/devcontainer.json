@@ -1,0 +1,19 @@
+{
+    "name": "Python 3 & UV",
+    "image": "mcr.microsoft.com/devcontainers/python:3.12",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/workspaces/constraints/.venv/bin/python",
+                "files.eol": "\r\n"
+            },
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "astral-sh.ruff",
+                "eamodio.gitlens"
+            ]
+        }
+    },
+    "postCreateCommand": "pip install uv && uv sync"
+}

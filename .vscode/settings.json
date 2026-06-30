@@ -1,3 +1,4 @@
 {
-    "python.defaultInterpreterPath": "i:\\constraints\\.venv\\Scripts\\python.exe"
+    "python.defaultInterpreterPath": "i:/constraints/.venv/Scripts/python.exe",
+    "files.eol": "\r\n"
 }
