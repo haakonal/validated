@@ -11,12 +11,11 @@ from validated.models import (
     LessThan,
     MatchesPattern,
     Shape,
+    Validated,
     Validator,
     ValidatorBaseModel,
     ValidatorCheckError,
 )
-
-Validated = Annotated
 
 __all__ = [
     "Check",

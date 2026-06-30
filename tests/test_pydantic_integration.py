@@ -151,6 +151,18 @@ def test_multi_validator_second_fails():
     assert "must be less than 100.0" in str(excinfo.value)
 
 
+class MultiBothFailConfig(ValidatorBaseModel):
+    score: Validated[float, GreaterThan(100.0), LessThan(0.0)]
+
+
+def test_multi_validator_both_fail():
+    with pytest.raises(PydanticValidationError) as excinfo:
+        MultiBothFailConfig(score=50.0)
+    err_str = str(excinfo.value)
+    assert "must be greater than 100.0" in err_str
+    assert "must be less than 0.0" in err_str
+
+
 # --- 5. Using the Validated alias ---
 
 

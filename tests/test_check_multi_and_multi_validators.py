@@ -143,20 +143,22 @@ def test_multiple_validators_single_param_both_pass():
 
 
 def test_multiple_validators_single_param_both_fail():
-    """Annotated with two validators; value fails both but only the first error is reported
-    (because _validate_value short-circuits on the first failing validator)."""
+    """Annotated with two validators; value fails both and both errors are reported."""
 
     @validated
     def func(x: Annotated[int, GreaterThan(10), LessThan(5)]):
         return x
 
-    # value 7: fails GreaterThan(10) first
+    # value 7: fails GreaterThan(10) and LessThan(5)
     with pytest.raises(ValidationError) as excinfo:
         func(7)
 
-    assert excinfo.value.parameter_name == "x"
-    assert isinstance(excinfo.value.validator, GreaterThan)
-    # Only first failure is reported — this is the current behavior
+    errs = excinfo.value.errors
+    assert len(errs) == 2
+    assert errs[0].parameter_name == "x"
+    assert isinstance(errs[0].validator, GreaterThan)
+    assert errs[1].parameter_name == "x"
+    assert isinstance(errs[1].validator, LessThan)
 
 
 def test_multiple_validators_with_check_in_annotated():
