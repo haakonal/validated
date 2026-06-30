@@ -1,5 +1,3 @@
-from typing import Annotated
-
 from validated.decorator import validated
 from validated.exceptions import ValidationError
 from validated.models import (
@@ -11,12 +9,11 @@ from validated.models import (
     LessThan,
     MatchesPattern,
     Shape,
+    Validated,
     Validator,
     ValidatorBaseModel,
     ValidatorCheckError,
 )
-
-Validated = Annotated
 
 __all__ = [
     "Check",

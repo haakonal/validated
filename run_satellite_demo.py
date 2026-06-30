@@ -1,4 +1,5 @@
 import numpy as np
+from pydantic import ValidationError as PydanticValidationError
 
 from satellite.models import (
     ACSState,
@@ -207,38 +208,48 @@ def main():
     run_scenario("Data Collection Mode - High Current Draw", high_draw_data)
 
     # 7. Faulty ACS Reaction Wheel Speeds Dimension (Shape Constraint)
-    faulty_acs_shape = SatelliteTelemetry(
-        mode="data_collection",
-        battery=BatteryState(charge_level=85.0, status="discharging", temperature=28.0, current_draw=90.0),
-        panels=[
-            SolarPanelState(deployed=True, power_generated=10.0),
-            SolarPanelState(deployed=True, power_generated=10.0),
-        ],
-        acs=ACSState(
-            reaction_wheel_speeds=np.array([-500.0, 1100.0], dtype=np.float64),  # Only 2 wheels instead of 3!
-            momentum_wheel_speed=3200.0,
-            pointing_deviation=0.4,
-        ),
-        comms=CommsState(ground_station_visible=True, signal_strength=-65.0),
-    )
-    run_scenario("Faulty ACS Reaction Wheel Speed Shape", faulty_acs_shape)
+    print_header("Faulty ACS Reaction Wheel Speed Shape")
+    try:
+        faulty_acs_shape = SatelliteTelemetry(
+            mode="data_collection",
+            battery=BatteryState(charge_level=85.0, status="discharging", temperature=28.0, current_draw=90.0),
+            panels=[
+                SolarPanelState(deployed=True, power_generated=10.0),
+                SolarPanelState(deployed=True, power_generated=10.0),
+            ],
+            acs=ACSState(
+                reaction_wheel_speeds=np.array([-500.0, 1100.0], dtype=np.float64),  # Only 2 wheels instead of 3!
+                momentum_wheel_speed=3200.0,
+                pointing_deviation=0.4,
+            ),
+            comms=CommsState(ground_station_visible=True, signal_strength=-65.0),
+        )
+        run_scenario("Faulty ACS Reaction Wheel Speed Shape", faulty_acs_shape)
+    except PydanticValidationError as e:
+        print(f"{BOLD}{RED}🔴 [FAIL] ACSState REJECTED at construction! Pydantic caught the shape violation:{RESET}")
+        print(f"{YELLOW}{e}{RESET}")
 
     # 8. Faulty ACS Reaction Wheel Speeds DType (DType Constraint)
-    faulty_acs_dtype = SatelliteTelemetry(
-        mode="data_collection",
-        battery=BatteryState(charge_level=85.0, status="discharging", temperature=28.0, current_draw=90.0),
-        panels=[
-            SolarPanelState(deployed=True, power_generated=10.0),
-            SolarPanelState(deployed=True, power_generated=10.0),
-        ],
-        acs=ACSState(
-            reaction_wheel_speeds=np.array([-500, 1100, -250], dtype=np.int32),  # int32 instead of float64!
-            momentum_wheel_speed=3200.0,
-            pointing_deviation=0.4,
-        ),
-        comms=CommsState(ground_station_visible=True, signal_strength=-65.0),
-    )
-    run_scenario("Faulty ACS Reaction Wheel Speed DType", faulty_acs_dtype)
+    print_header("Faulty ACS Reaction Wheel Speed DType")
+    try:
+        faulty_acs_dtype = SatelliteTelemetry(
+            mode="data_collection",
+            battery=BatteryState(charge_level=85.0, status="discharging", temperature=28.0, current_draw=90.0),
+            panels=[
+                SolarPanelState(deployed=True, power_generated=10.0),
+                SolarPanelState(deployed=True, power_generated=10.0),
+            ],
+            acs=ACSState(
+                reaction_wheel_speeds=np.array([-500, 1100, -250], dtype=np.int32),  # int32 instead of float64!
+                momentum_wheel_speed=3200.0,
+                pointing_deviation=0.4,
+            ),
+            comms=CommsState(ground_station_visible=True, signal_strength=-65.0),
+        )
+        run_scenario("Faulty ACS Reaction Wheel Speed DType", faulty_acs_dtype)
+    except PydanticValidationError as e:
+        print(f"{BOLD}{RED}🔴 [FAIL] ACSState REJECTED at construction! Pydantic caught the dtype violation:{RESET}")
+        print(f"{YELLOW}{e}{RESET}")
 
     # 8.5. Charging Mode with Multiple Concurrent Failures
     multiple_failures_charging = SatelliteTelemetry(
@@ -292,8 +303,6 @@ def main():
 
     # With Pydantic integration, tasks are validated at construction time.
     print_header("Pre-Commit Task Validation (Pydantic ValidatorBaseModel Integration)")
-
-    from pydantic import ValidationError as PydanticValidationError
 
     # 10a. Successful Slew Task — construction passes
     try:

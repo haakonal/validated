@@ -7,7 +7,7 @@ from typing import Annotated, Any, get_args, get_origin
 from pydantic import TypeAdapter
 
 from validated.exceptions import ValidationError
-from validated.models import Validator, ValidatorCheckError
+from validated.models import MultiValidator, Validator, ValidatorCheckError
 
 # Lazy numpy import — the library works without numpy installed,
 # array validators simply won't match non-ndarray values.
@@ -44,7 +44,12 @@ def _compile_param(annotation: Any, kind: inspect._ParameterKind) -> _ParamSpec:
     if origin is Annotated:
         args = get_args(annotation)
         base_type = args[0]
-        validators = [m for m in args[1:] if isinstance(m, Validator)]
+        validators = []
+        for m in args[1:]:
+            if isinstance(m, MultiValidator):
+                validators.extend(m.validators)
+            elif isinstance(m, Validator):
+                validators.append(m)
     else:
         base_type = annotation
         validators = []
@@ -86,26 +91,33 @@ def _validate_value(val: Any, spec: _ParamSpec, param_name: str) -> Any:
         coerced = val
 
     # Validate custom/value validators
+    errors = []
     for validator in spec.validators:
         try:
             passed = validator.validate(coerced)
+            if not passed:
+                errors.append(ValidationError(
+                    parameter_name=param_name,
+                    value=coerced,
+                    validator=validator,
+                    message=validator.error_message(coerced),
+                ))
         except ValidatorCheckError as exc:
             # Check predicate itself raised — chain the original exception
             cause = exc.original_exception
-            raise ValidationError(
-                parameter_name=param_name,
-                value=coerced,
-                validator=validator,
-                message=validator.error_message(coerced),
-            ) from cause
-
-        if not passed:
-            raise ValidationError(
+            err = ValidationError(
                 parameter_name=param_name,
                 value=coerced,
                 validator=validator,
                 message=validator.error_message(coerced),
             )
+            err.__cause__ = cause
+            errors.append(err)
+
+    if errors:
+        if len(errors) == 1:
+            raise errors[0]
+        raise ValidationError(errors=errors)
 
     return coerced
 
@@ -159,7 +171,7 @@ def validated(func: Callable[..., Any]) -> Callable[..., Any]:
                         coerced_item = _validate_value(item, spec, f"{name}[{idx}]")
                         coerced_list.append(coerced_item)
                     except ValidationError as exc:
-                        errors.append(exc)
+                        errors.extend(exc.errors)
                         param_has_error = True
                 if not param_has_error:
                     bound.arguments[name] = tuple(coerced_list)
@@ -171,7 +183,7 @@ def validated(func: Callable[..., Any]) -> Callable[..., Any]:
                         coerced_v = _validate_value(v, spec, f"{name}[{k!r}]")
                         coerced_dict[k] = coerced_v
                     except ValidationError as exc:
-                        errors.append(exc)
+                        errors.extend(exc.errors)
                         param_has_error = True
                 if not param_has_error:
                     bound.arguments[name] = coerced_dict
@@ -180,7 +192,7 @@ def validated(func: Callable[..., Any]) -> Callable[..., Any]:
                     coerced_val = _validate_value(val, spec, name)
                     bound.arguments[name] = coerced_val
                 except ValidationError as exc:
-                    errors.append(exc)
+                    errors.extend(exc.errors)
 
         if errors:
             if len(errors) == 1:

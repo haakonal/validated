@@ -25,7 +25,7 @@ graph TD
 
 #### A. [src/validated/exceptions.py](src/validated/exceptions.py)
 This module defines the custom `ValidationError` exception.
-* **Implementation**: Subclasses the standard `ValueError` and stores contextual information: `parameter_name`, `value` (that caused the violation), `constraint` (the constraint object violated), and the `message`.
+* **Implementation**: Subclasses the standard `ValueError` and stores contextual information: `parameter_name`, `value` (that caused the violation), `validator` (the validator object violated), `message`, and an `errors` list for collecting multiple failures.
 * **Design Decision**: Explicitly tracking the failing parameter name and the rejected value allows upstream systems (like telemetry managers or REST APIs) to render targeted error messages, log failures, or trigger automatic safing procedures without guessing which argument failed.
 
 #### B. [src/validated/models.py](src/validated/models.py)
@@ -42,7 +42,7 @@ This file defines the class hierarchy of all validation rule classes.
   - `Shape`: Inspects a NumPy array's `.shape` attribute and matches it to a predefined tuple template (supporting wildcard constraints using `-1`, `*`, or `None`).
   - `DType`: Validates the NumPy array's data type.
 * **Design Decision**: *Why class-based instead of pure functions?*
-  Using objects allows constraints to be parameterizable (e.g., storing boundaries inside `min_val` and `max_val`). When a validation fails, the constraint instance is returned along with the exception, allowing the caller to inspect metadata or build context-aware logs (e.g. `isinstance(e.validator, Shape)`).
+  Using objects allows constraints to be parameterizable (e.g., storing boundaries inside `min_val` and `max_val`). When a validation fails, the validator instance is returned along with the exception, allowing the caller to inspect metadata or build context-aware logs (e.g. `isinstance(e.validator, Shape)`).
 
 #### C. [src/validated/decorator.py](src/validated/decorator.py)
 This is the core validation engine that implements the `@validated` decorator.
