@@ -121,4 +121,4 @@ class _ValidatorBaseModelMeta(ModelMetaclass):
 
 
 class ValidatorBaseModel(BaseModel, metaclass=_ValidatorBaseModelMeta):
-    model_config = ConfigDict(validate_assignment=True)
+    model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
