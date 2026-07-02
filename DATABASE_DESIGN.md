@@ -217,86 +217,67 @@ This pattern complements the decorator-based approach:
 
 ## 7. Database Payloads for All Validator Models
 
-Here is the complete reference of how each of the 8 constraint types in the `validated` library maps to the JSON `parameters` column in the database:
+Here is the complete reference of how each of the built-in constraint types in the `validated` library maps to the JSON `parameters` column in the database, supported natively by `load_validator`:
 
-### 1. `GreaterThan`
-* **Python Representation**: `GreaterThan(threshold=0.0)`
-* **Database JSON**: `{"threshold": 0.0}`
+### Numeric & Comparisons
+* `GreaterThan(threshold=0.0)` → `{"threshold": 0.0}`
+* `LessThan(threshold=2.0)` → `{"threshold": 2.0}`
+* `InRange(min_val=-10.0, max_val=40.0)` → `{"min_val": -10.0, "max_val": 40.0}`
 
-### 2. `LessThan`
-* **Python Representation**: `LessThan(threshold=2.0)`
-* **Database JSON**: `{"threshold": 2.0}`
+### Sequences & Collections
+* `Length(min_len=1, max_len=5)` → `{"min_len": 1, "max_len": 5}`
+* `Contains(item="foo")` → `{"item": "foo"}`
+* `NonEmpty()` → `{}`
+* `Sorted(reverse=True)` → `{"reverse": true}`
+* `Unique()` → `{}`
 
-### 3. `InRange`
-* **Python Representation**: `InRange(min_val=-10.0, max_val=40.0)`
-* **Database JSON**: `{"min_val": -10.0, "max_val": 40.0}`
+### Strings
+* `MatchesPattern(pattern="^abc$")` → `{"pattern": "^abc$"}`
+* `StartsWith(prefix="abc")` → `{"prefix": "abc"}`
+* `EndsWith(suffix="xyz")` → `{"suffix": "xyz"}`
+* `ContainsSubstring(substring="foo")` → `{"substring": "foo"}`
+* `IsLowerCase()` → `{}`
+* `IsUpperCase()` → `{}`
 
-### 5. `Length`
-* **Python Representation**: `Length(min_len=1, max_len=5)`
-* **Database JSON**: `{"min_len": 1, "max_len": 5}` (Either key can be omitted if only enforcing a minimum or maximum boundary)
+### Paths
+* `IsFile()` → `{}`
+* `IsDirectory()` → `{}`
+* `PathExists()` → `{}`
+* `HasExtension(".json", ".txt")` → `{"extensions": [".json", ".txt"]}`
 
-### 5. `MatchesPattern`
-* **Python Representation**: `MatchesPattern(pattern=r"^(ACS|PWR|COM)-\d{3}$")`
-* **Database JSON**: `{"pattern": "^(ACS|PWR|COM)-\\\\d{3}$"}`
+### NumPy Arrays
+* `Shape(None, 3)` → `{"dims": [null, 3]}`
+* `DType("float64")` → `{"dtype": "float64"}`
 
-### 6. `Check` (Custom Predicates)
-* **Python Representation**: `Check(predicate=PREDICATE_REGISTRY["is_even"], description="must be even")`
-* **Database JSON**: `{"predicate_key": "is_even", "description": "must be even"}`
-
-### 7. `Shape` (NumPy Array Dimensions)
-* **Python Representation**: `Shape(None, 3)` or `Shape(3)`
-* **Database JSON**: `{"dims": [null, 3]}` or `{"dims": [3]}` (Wildcard dimensions are represented as `null`, `*`, or `-1`)
-
-### 8. `DType` (NumPy Array Data Type)
-* **Python Representation**: `DType("float64")`
-* **Database JSON**: `{"dtype": "float64"}`
+*(Note: Dynamic loading of parameterized `Check` predicates is currently not natively supported by `load_validator` due to code-execution safety considerations, but is planned as a future backlog item).*
 
 ---
 
 ## 8. Runtime Hot-Reloading in Docker (Proxy Validator Pattern)
 
 A major limitation of the **Before-Import Initialization** pattern is that Python decorators evaluate annotations exactly **once** (at import-time). 
-
 If your application is running inside a Docker container, modifying thresholds in the database will have **no effect** on the compiled functions unless you reboot the container/process. 
 
-To support real-time **hot-reloading without restarts**, we can implement a **Proxy Validator Pattern**. Instead of binding the concrete database constraint to the decorator statically, we bind a static `Proxy` constraint that queries our in-memory cache dynamically on every execution call.
+To support real-time **hot-reloading without restarts**, the `validated` library ships with a native **Proxy Validator Pattern**. 
 
-```
-[ validate_slew_task() called ]
-              │
-              ▼ (decorator triggers check)
-[ ProxyValidator.validate(value) ]
-              │
-              ▼ (looks up current version)
-[ Fetch rules.get_rule(norad_id, context, param) ] ── (Can be updated live in memory!)
-              │
-              ▼ (delegates check)
-[ LessThan(2.5).validate(value) ]
-```
+Instead of binding the concrete database constraint to the decorator statically, you define a `ValidatorProvider` and bind a `ProxyValidator` that queries your provider dynamically on every execution call.
 
-### Step 1: Implement the `ProxyValidator` Class
+### Step 1: Implement a `ValidatorProvider`
 ```python
-# src/constraints/models.py or src/satellite/rules.py
-class ProxyValidator(Validator):
-    def __init__(self, context_name: str, parameter_name: str, get_active_sat_id_fn):
-        self.context_name = context_name
-        self.parameter_name = parameter_name
-        self.get_active_sat_id_fn = get_active_sat_id_fn
+from validated.loaders import load_validator
+from validated.validators.proxy import ValidatorProvider
 
-    def _get_active_constraint(self) -> Validator:
+class DatabaseProvider(ValidatorProvider):
+    def get_validator(self, context_name: str, parameter_name: str) -> Validator:
         # 1. Fetch current active spacecraft ID from thread/execution context
-        norad_id = self.get_active_sat_id_fn()
-        # 2. Fetch the active compiled constraint object from the memory cache
-        rule = rules.get_rule(norad_id, self.context_name, self.parameter_name)
-        if not rule:
-            raise ValueError(f"No active constraint configured for {norad_id}:{self.context_name}:{self.parameter_name}")
-        return rule
-
-    def validate(self, value: Any) -> bool:
-        return self._get_active_constraint().validate(value)
-
-    def error_message(self, value: Any) -> str:
-        return self._get_active_constraint().error_message(value)
+        norad_id = active_sat_id.get()
+        # 2. Fetch the JSON row from your database or memory cache
+        db_row = rules.get_rule(norad_id, context_name, parameter_name)
+        if not db_row:
+            raise ValueError(f"No rule configured for {norad_id}:{context_name}:{parameter_name}")
+            
+        # 3. Instantiate the validator dynamically
+        return load_validator(db_row)
 ```
 
 ### Step 2: Annotate Functions statically using Proxies
@@ -306,13 +287,15 @@ Because the proxy object itself is created once at class import-time, the decora
 # src/satellite/validation.py
 import contextvars
 from typing import Annotated
-from validated import validated
+from validated import validated, ProxyValidator
 
 # ContextVar tracking active satellite ID in the current execution thread
 active_sat_id = contextvars.ContextVar("active_sat_id")
 
+provider = DatabaseProvider()
+
 # Static proxies pointing to dynamic lookups
-slew_speed_proxy = ProxyValidator("slew_task", "max_slew_speed", active_sat_id.get)
+slew_speed_proxy = ProxyValidator("slew_task", "max_slew_speed", provider)
 
 @validated
 def validate_slew_task(
@@ -323,12 +306,6 @@ def validate_slew_task(
 ```
 
 ### Step 3: Hot-Reloading Live in Memory
-When operators change database thresholds, the API triggers a refresh to update the `rules.ACTIVE_VALIDATORS` dictionary in memory:
+When operators change database thresholds, the API triggers a refresh to update your application's in-memory cache. 
 
-```python
-def on_database_update_event(db_connection):
-    """Event handler triggered when database rules change. Zero downtime, zero restarts."""
-    # Re-fetches database rows and overwrites the in-memory cache dictionary
-    rules.load_all_from_database(db_connection)
-```
 Using this pattern, the Docker container runs continuously, and database updates take effect instantly on the very next validation call.

@@ -189,18 +189,15 @@ Tasks are modeled via `SlewTask` and `ImagingTask` and routed through `validate_
 
 ---
 
-## 3. Database Configuration & Before-Import Initialization
+## 3. Database Configuration & Dynamic Loading
 
-In production spacecraft ground stations, constraint thresholds (e.g., maximum slew speeds, cloud cover limits, minimum battery states) are stored in databases. This allows operators to adjust safety guidelines on a per-satellite or per-task basis without redeploying code.
+In production systems, constraint thresholds are often stored in databases. This allows operators to adjust safety guidelines without redeploying code. The `validated` package natively supports dynamic initialization and hot-reloading without tying you to any specific database.
 
-The database architecture for this project uses a **Single Polymorphic Table (Document Style)** — all constraint types share one table with a JSONB `parameters` column. This design supports:
+### Built-in Dynamic Tools
+* **JSON Serialization**: Use `load_validator(dict)` and `dump_validator(validator)` to seamlessly translate between JSON database rows and native Python constraints.
+* **Runtime Hot-Reloading**: Use the built-in `ProxyValidator` and `ValidatorProvider` to automatically fetch the latest constraints from your database or cache on every execution, allowing zero-downtime threshold updates in Docker containers.
 
-* **Before-Import Initialization**: Loading constraint values from the database at startup, then binding them into the `@validated` decorator annotations before `validation.py` is imported.
-* **Per-Satellite Rules**: Different thresholds for different spacecraft (e.g., an older satellite with degraded reaction wheels might use `LessThan(1.0)` for slew speed, while a newer one uses `LessThan(3.0)`).
-* **Safe Predicate Serialization**: `Check` predicates are stored as registry keys (not raw code) and resolved to hardcoded lambdas at startup via a Named Predicate Registry.
-* **Runtime Hot-Reloading (Docker)**: A Proxy Constraint pattern enables live threshold updates without container restarts.
-
-> **Note**: The database schema, rules module, closure-based compilation, predicate factories, and the Proxy Constraint pattern are documented in detail in [DATABASE_DESIGN.md](DATABASE_DESIGN.md). The code examples in that document are a **design reference** for integrating the library with a real database — they are not shipped as part of this package.
+> **Note**: For a complete reference on database schemas, secure serialization, and how to implement a `ValidatorProvider`, see [DATABASE_DESIGN.md](DATABASE_DESIGN.md).
 
 ---
 

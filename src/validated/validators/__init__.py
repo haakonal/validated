@@ -3,6 +3,7 @@ from validated.validators.comparisons import GreaterThan, InRange, LessThan
 from validated.validators.numpy import DType, Shape
 from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
 from validated.validators.predicates import Check
+from validated.validators.proxy import ProxyValidator, ValidatorProvider
 from validated.validators.sequences import Contains, Length, NonEmpty, Sorted, Unique
 from validated.validators.strings import (
     ContainsSubstring,
@@ -32,6 +33,7 @@ __all__ = [
     "MultiValidator",
     "NonEmpty",
     "PathExists",
+    "ProxyValidator",
     "Shape",
     "Sorted",
     "StartsWith",
@@ -39,4 +41,5 @@ __all__ = [
     "Validated",
     "Validator",
     "ValidatorBaseModel",
+    "ValidatorProvider",
 ]
