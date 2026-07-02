@@ -15,55 +15,57 @@ The `validated` library leverages Python's PEP 593 (`typing.Annotated`) metadata
 ```mermaid
 graph TD
     A["Function Call"] --> B["@validated wrapper"]
-    B --> C["inspect.signature / typing.get_type_hints"]
-    C --> D["Pydantic Type Coercion / Validation"]
+    B --> C["pydantic.validate_call"]
+    C --> D["Pydantic Type Coercion / Core Schema Generation"]
     D --> E["Custom Constraint Validation"]
     E --> F["Execute Original Function"]
     F --> G["Validate Return Value"]
     G --> H["Return Value"]
 ```
 
-#### A. [src/validated/exceptions.py](src/validated/exceptions.py)
-This module defines the custom `ValidationError` exception.
-* **Implementation**: Subclasses the standard `ValueError` and stores contextual information: `parameter_name`, `value` (that caused the violation), `validator` (the validator object violated), `message`, and an `errors` list for collecting multiple failures.
-* **Design Decision**: Explicitly tracking the failing parameter name and the rejected value allows upstream systems (like telemetry managers or REST APIs) to render targeted error messages, log failures, or trigger automatic safing procedures without guessing which argument failed.
-
-#### B. [src/validated/models.py](src/validated/models.py)
-This file defines the class hierarchy of all validation rule classes.
-* **`Validator` Base Class**:
+#### A. [src/validated/validators/](src/validated/validators/)
+This directory contains the class hierarchy of all validation rule classes, categorized by domain.
+* **`Validator` Base Class (`base.py`)**:
   Defines the abstract interface: `validate(self, value) -> bool` and `error_message(self, value) -> str`.
-* **Standard Constraints**:
+* **Comparisons (`comparisons.py`)**:
   - `GreaterThan` & `LessThan`: Basic boundary checks.
   - `InRange`: Keeps numerical values inside a closed interval `[min_val, max_val]`.
-  - `Length`: Asserts string or list length criteria.
-  - `MatchesPattern`: Enforces regex constraints on strings.
+* **Strings (`strings.py`)**:
+  - `MatchesPattern`: Enforces regex constraints.
+  - `StartsWith`, `EndsWith`, `ContainsSubstring`: Substring checks.
+  - `IsLowerCase`, `IsUpperCase`: Casing constraints.
+* **Sequences (`sequences.py`)**:
+  - `Length`: Asserts minimum or maximum sequence lengths.
+  - `NonEmpty`: Ensures a sequence is not empty.
+  - `Contains`: Checks if a specific element is present.
+  - `Unique`: Ensures all elements in the sequence are unique.
+  - `Sorted`: Enforces ascending or descending order.
+* **Paths (`paths.py`)**:
+  - `PathExists`, `IsFile`, `IsDirectory`, `HasExtension`: Validates `pathlib.Path` or string representations of files and directories.
+* **Predicates (`predicates.py`)**:
   - `Check`: Accepts a custom predicate callable (like a lambda or function) and description, offering arbitrary custom checks.
-* **NumPy-specific Constraints**:
+* **NumPy-specific Constraints (`numpy.py`)**:
   - `Shape`: Inspects a NumPy array's `.shape` attribute and matches it to a predefined tuple template (supporting wildcard constraints using `-1`, `*`, or `None`).
   - `DType`: Validates the NumPy array's data type.
 * **Design Decision**: *Why class-based instead of pure functions?*
-  Using objects allows constraints to be parameterizable (e.g., storing boundaries inside `min_val` and `max_val`). When a validation fails, the validator instance is returned along with the exception, allowing the caller to inspect metadata or build context-aware logs (e.g. `isinstance(e.validator, Shape)`).
+  Using objects allows constraints to be parameterizable (e.g., storing boundaries inside `min_val` and `max_val`). They seamlessly integrate with Pydantic's underlying core schema generation.
 
-#### C. [src/validated/decorator.py](src/validated/decorator.py)
-This is the core validation engine that implements the `@validated` decorator.
+#### B. [src/validated/decorator.py](src/validated/decorator.py)
+This is the core validation engine that exposes the `@validated` decorator.
 * **Implementation Details**:
-  1. **Signature Parsing**: Uses `inspect.signature(func)` to determine names and order of arguments.
-  2. **Type Extraction**: Uses `typing.get_type_hints(func, include_extras=True)` to retrieve the type signatures. Passing `include_extras=True` ensures that metadata inside `Annotated[Type, Metadata]` is preserved.
-  3. **Value Coercion**: For each argument, the decorator runs the value through Pydantic's `TypeAdapter(base_type).validate_python(val)`. This ensures that inputs (e.g. string `"5"`) are automatically coerced to their proper types (e.g. integer `5`).
-  4. **Constraint Enforcement**: Iterates over any metadata constraints extracted from `Annotated` parameters and calls `.validate()` on them.
-  5. **Variadic Support**: Special logic safely unpacks and validates positional arguments (`*args` / `VAR_POSITIONAL`) and keyword arguments (`**kwargs` / `VAR_KEYWORD`).
-  6. **Return Value Checks**: Finally, it repeats this process on the return value of the function before sending it back.
-* **Design Decision**: *Why Pydantic TypeAdapter?*
-  Instead of writing manual type checkers for floats, dicts, lists, and model definitions, Pydantic's underlying Rust validation engine handles extremely fast type coercion and validation. By separating coercion (type safety) from custom constraints (value safety), the code remains incredibly clean.
+  The entire decorator is now a thin wrapper around Pydantic's `@validate_call`. Because our `Validator` classes natively implement Pydantic's `__get_pydantic_core_schema__`, Pydantic handles all the heavy lifting: signature parsing, variadic unpacking, and type coercion. 
+  The `@validated` decorator simply configures `@validate_call` with `arbitrary_types_allowed=True` to seamlessly support NumPy arrays.
+* **Design Decision**: *Why delegate to Pydantic?*
+  Instead of writing manual type checkers and reflection logic (`inspect.signature`), we leverage Pydantic's underlying Rust validation engine. This handles extremely fast type coercion and validation, making the codebase incredibly clean, reliable, and performant.
 
 ### Selective Validation Levels
 
 The `@validated` decorator supports three levels of validation on a parameter-by-parameter basis:
 
 1. **Full Validation (Type Coercion + Value Constraints)**:
-   Using `Annotated[Type, Constraint]`. The parameter is type-checked (and coerced if possible), then all associated constraints are validated.
+   Using `Validated[Type, Constraint]`. The parameter is type-checked (and coerced if possible), then all associated constraints are validated.
    ```python
-   # E.g. subsystem_id: Annotated[str, MatchesPattern(r"^(ACS|PWR|COM)-\d{3}$")]
+   # E.g. subsystem_id: Validated[str, MatchesPattern(r"^(ACS|PWR|COM)-\d{3}$")]
    ```
 2. **Type Validation Only (No Value Constraints)**:
    Using a plain type hint (e.g., `float`). The parameter is type-checked and coerced, but no custom constraints are run.
@@ -109,7 +111,7 @@ class ScoreModel(BaseModel):
 
 Pydantic's type coercion still works transparently — string `"5"` is coerced to `int(5)` before the validator runs.
 
-> **Note**: NumPy validators (`Shape`, `DType`) are not supported on Pydantic models because Pydantic does not natively handle `np.ndarray`. Use the `@validated` function decorator for NumPy array validation.
+> **Note**: NumPy arrays are fully supported! The library provides a custom `ValidatorBaseModel` that automatically handles `arbitrary_types_allowed=True`. Just use standard Python type hints like `numpy.ndarray` or `numpy.typing.NDArray[np.float64]` wrapped in `Validated`!
 
 ---
 
@@ -136,7 +138,7 @@ The Attitude Control System controls orientation using 3 reaction wheels. If the
 ```python
 @validated
 def check_reaction_wheels(
-    wheel_speeds: Annotated[np.ndarray, Shape(3), DType(np.float64)]
+    wheel_speeds: Validated[np.ndarray, Shape(3), DType(np.float64)]
 ) -> bool:
     return True
 ```
@@ -152,12 +154,12 @@ In `charging` mode, we assert that:
 ```python
 @validated
 def validate_charging_telemetry(
-    panels_deployed: Annotated[bool, Check(lambda x: x is True, "all solar panels must be deployed")],
-    net_power: Annotated[float, GreaterThan(0.0)],
-    battery_status: Annotated[str, Check(lambda s: s == "charging", "battery status must be 'charging'")],
-    battery_charge_level: Annotated[float, InRange(50.0, 100.0)],
-    sun_pointing_deviation: Annotated[float, LessThan(5.0)],
-    reaction_wheel_speeds: Annotated[np.ndarray, Shape(3), DType(np.float64)],
+    panels_deployed: Validated[bool, Check(lambda x: x is True, "all solar panels must be deployed")],
+    net_power: Validated[float, GreaterThan(0.0)],
+    battery_status: Validated[str, Check(lambda s: s == "charging", "battery status must be 'charging'")],
+    battery_charge_level: Validated[float, InRange(50.0, 100.0)],
+    sun_pointing_deviation: Validated[float, LessThan(5.0)],
+    reaction_wheel_speeds: Validated[np.ndarray, Shape(3), DType(np.float64)],
 ) -> bool:
     return True
 ```
@@ -176,9 +178,9 @@ Before committing a planned spacecraft task (e.g., targeting a Point of Interest
 # From src/satellite/validation.py
 @validated
 def validate_slew_task(
-    poi_name: Annotated[str, Length(min_len=1)],
-    max_slew_speed: Annotated[float, LessThan(2.0)],             # Slew speed limit: 2.0 deg/s
-    predicted_coverage: Annotated[float, InRange(80.0, 100.0)],  # Min coverage requirement: 80%
+    poi_name: Validated[str, Length(min_len=1)],
+    max_slew_speed: Validated[float, LessThan(2.0)],             # Slew speed limit: 2.0 deg/s
+    predicted_coverage: Validated[float, InRange(80.0, 100.0)],  # Min coverage requirement: 80%
 ) -> bool:
     return True
 ```

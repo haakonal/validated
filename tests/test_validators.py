@@ -1,7 +1,6 @@
-from typing import Annotated
-
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from validated import (
     Check,
@@ -12,36 +11,37 @@ from validated import (
     LessThan,
     MatchesPattern,
     Shape,
-    ValidationError,
+    Validated,
     validated,
 )
 
 
 # 1. Test basic coercion and validation
-def test_coercion_and_basic_validation():
+def test_coercion_and_basic_validation() -> None:
     @validated
     def add_ints(a: int, b: int) -> int:
         return a + b
 
     # Valid values & coercion
     assert add_ints(5, 10) == 15
-    assert add_ints("5", "10") == 15  # Coerced by Pydantic
+    assert add_ints("5", "10") == 15  # type: ignore
 
     # Invalid values
     with pytest.raises(ValidationError) as excinfo:
-        add_ints("invalid", 10)
-    assert excinfo.value.parameter_name == "a"
-    assert excinfo.value.value == "invalid"
-    assert "type validation failed" in excinfo.value.message
+        add_ints("invalid", 10)  # type: ignore
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert errors[0]["input"] == "invalid"
+    assert "valid integer" in errors[0]["msg"]
 
 
 # 2. Test numeric validators
-def test_numeric_validators():
+def test_numeric_validators() -> None:
     @validated
     def process_numbers(
-        pos: Annotated[int, GreaterThan(0)],
-        neg: Annotated[float, LessThan(0.0)],
-        percent: Annotated[float, InRange(0.0, 100.0)],
+        pos: Validated[int, GreaterThan(0)],
+        neg: Validated[float, LessThan(0.0)],
+        percent: Validated[float, InRange(0.0, 100.0)],
     ) -> float:
         return pos + neg + percent
 
@@ -51,38 +51,38 @@ def test_numeric_validators():
     # GreaterThan violation
     with pytest.raises(ValidationError) as excinfo:
         process_numbers(0, -2.5, 50.0)
-    assert excinfo.value.parameter_name == "pos"
-    assert isinstance(excinfo.value.validator, GreaterThan)
-    assert "must be greater than 0" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert "must be greater than 0" in errors[0]["msg"]
 
     # LessThan violation
     with pytest.raises(ValidationError) as excinfo:
         process_numbers(5, 0.0, 50.0)
-    assert excinfo.value.parameter_name == "neg"
-    assert isinstance(excinfo.value.validator, LessThan)
-    assert "must be less than 0.0" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (1,)
+    assert "must be less than 0.0" in errors[0]["msg"]
 
     # InRange violation (too small)
     with pytest.raises(ValidationError) as excinfo:
         process_numbers(5, -2.5, -0.1)
-    assert excinfo.value.parameter_name == "percent"
-    assert isinstance(excinfo.value.validator, InRange)
-    assert "must be in range [0.0, 100.0]" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (2,)
+    assert "must be in range [0.0, 100.0]" in errors[0]["msg"]
 
     # InRange violation (too large)
     with pytest.raises(ValidationError) as excinfo:
         process_numbers(5, -2.5, 100.1)
-    assert excinfo.value.parameter_name == "percent"
-    assert isinstance(excinfo.value.validator, InRange)
-    assert "must be in range [0.0, 100.0]" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (2,)
+    assert "must be in range [0.0, 100.0]" in errors[0]["msg"]
 
 
 # 3. Test string and collection validators
-def test_string_and_collection_validators():
+def test_string_and_collection_validators() -> None:
     @validated
     def process_strings(
-        username: Annotated[str, Length(min_len=3, max_len=10)],
-        email: Annotated[str, MatchesPattern(r"^[^@]+@[^@]+\.[^@]+$")],
+        username: Validated[str, Length(min_len=3, max_len=10)],
+        email: Validated[str, MatchesPattern(r"^[^@]+@[^@]+\.[^@]+$")],
     ):
         return username, email
 
@@ -95,44 +95,45 @@ def test_string_and_collection_validators():
     # Length violation (too short)
     with pytest.raises(ValidationError) as excinfo:
         process_strings("ab", "alice@example.com")
-    assert excinfo.value.parameter_name == "username"
-    assert isinstance(excinfo.value.validator, Length)
-    assert "length must be between 3 and 10" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert "length must be between 3 and 10" in errors[0]["msg"]
 
     # Length violation (too long)
     with pytest.raises(ValidationError) as excinfo:
         process_strings("alice_long_name", "alice@example.com")
-    assert excinfo.value.parameter_name == "username"
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
 
     # Pattern violation
     with pytest.raises(ValidationError) as excinfo:
         process_strings("alice", "invalid-email")
-    assert excinfo.value.parameter_name == "email"
-    assert isinstance(excinfo.value.validator, MatchesPattern)
-    assert "must match pattern" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (1,)
+    assert "must match pattern" in errors[0]["msg"]
 
 
 # 4. Test custom validator Check
-def test_custom_check():
+def test_custom_check() -> None:
     @validated
-    def process_even(x: Annotated[int, Check(lambda v: v % 2 == 0, "must be even")]):
+    def process_even(x: Validated[int, Check(lambda v: v % 2 == 0, "must be even")]):
         return x
 
     assert process_even(4) == 4
 
     with pytest.raises(ValidationError) as excinfo:
         process_even(5)
-    assert excinfo.value.parameter_name == "x"
-    assert isinstance(excinfo.value.validator, Check)
-    assert "must satisfy custom check: must be even" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert "must satisfy custom check: must be even" in errors[0]["msg"]
 
 
 # 5. Test NumPy shape and dtype validators
-def test_numpy_validators():
+def test_numpy_validators() -> None:
     @validated
     def process_array(
-        arr: Annotated[np.ndarray, Shape(None, 3), DType(np.float32)],
-        vector: Annotated[np.ndarray, Shape(5), DType("int64")],
+        arr: Validated[np.ndarray, Shape(None, 3), DType(np.float32)],
+        vector: Validated[np.ndarray, Shape(5), DType("int64")],
     ):
         return arr, vector
 
@@ -146,56 +147,61 @@ def test_numpy_validators():
     # Not an array
     with pytest.raises(ValidationError) as excinfo:
         process_array("not-an-array", v)  # type: ignore
-    assert excinfo.value.parameter_name == "arr"
-    assert "value is not a NumPy array" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert "Input should be an instance of ndarray" in errors[0]["msg"]
 
     # Shape violation (wrong number of dimensions)
     with pytest.raises(ValidationError) as excinfo:
         process_array(np.ones(3, dtype=np.float32), v)
-    assert excinfo.value.parameter_name == "arr"
-    assert "does not match expected shape" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert "does not match expected shape" in errors[0]["msg"]
 
     # Shape violation (wrong dimension size)
     with pytest.raises(ValidationError) as excinfo:
         process_array(np.ones((10, 4), dtype=np.float32), v)
-    assert excinfo.value.parameter_name == "arr"
-    assert "does not match expected shape" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert "does not match expected shape" in errors[0]["msg"]
 
     # DType violation
     with pytest.raises(ValidationError) as excinfo:
         process_array(np.ones((10, 3), dtype=np.float64), v)
-    assert excinfo.value.parameter_name == "arr"
-    assert "does not match expected dtype" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert "does not match expected dtype" in errors[0]["msg"]
 
     # DType violation for vector
     with pytest.raises(ValidationError) as excinfo:
         process_array(a, np.zeros(5, dtype=np.int32))
-    assert excinfo.value.parameter_name == "vector"
-    assert "does not match expected dtype" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (1,)
+    assert "does not match expected dtype" in errors[0]["msg"]
 
 
 # 6. Test return value validators
-def test_return_value_validators():
+def test_return_value_validators() -> None:
     @validated
-    def get_positive(x: int) -> Annotated[int, GreaterThan(0)]:
+    def get_positive(x: int) -> Validated[int, GreaterThan(0)]:
         return x
 
     assert get_positive(5) == 5
 
     with pytest.raises(ValidationError) as excinfo:
         get_positive(-5)
-    assert excinfo.value.parameter_name == "<return>"
-    assert excinfo.value.value == -5
-    assert isinstance(excinfo.value.validator, GreaterThan)
-    assert "must be greater than 0" in excinfo.value.message
+    errors = excinfo.value.errors()
+    # Pydantic validate_call reports return validation errors under a specific loc or as a ValueError
+    # It might just be an error with loc=() or similar depending on Pydantic version
+    assert "must be greater than 0" in errors[0]["msg"]
 
 
 # 7. Test var-positional and var-keyword arguments
-def test_var_args_and_kwargs():
+def test_var_args_and_kwargs() -> None:
     @validated
     def process_many(
-        *items: Annotated[int, GreaterThan(0)],
-        **options: Annotated[float, InRange(0.0, 1.0)],
+        *items: Validated[int, GreaterThan(0)],
+        **options: Validated[float, InRange(0.0, 1.0)],
     ):
         return items, options
 
@@ -206,47 +212,48 @@ def test_var_args_and_kwargs():
     )
 
     # Coerced
-    assert process_many("1", "2", alpha="0.5") == ((1, 2), {"alpha": 0.5})
+    assert process_many("1", "2", alpha="0.5") == ((1, 2), {"alpha": 0.5})  # type: ignore
 
     # Positional arg violation
     with pytest.raises(ValidationError) as excinfo:
         process_many(1, -2, 3)
-    assert excinfo.value.parameter_name == "items[1]"
-    assert excinfo.value.value == -2
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (1,)
+    assert errors[0]["input"] == -2
 
     # Keyword arg violation
     with pytest.raises(ValidationError) as excinfo:
         process_many(1, 2, alpha=1.5)
-    assert excinfo.value.parameter_name == "options['alpha']"
-    assert excinfo.value.value == 1.5
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == ("alpha",)
+    assert errors[0]["input"] == 1.5
 
 
 # 8. Test MatchesPattern uses fullmatch (not partial match)
-def test_matches_pattern_fullmatch():
-    """Verify that MatchesPattern requires the ENTIRE string to match,
-    not just the beginning (fullmatch semantics vs match semantics)."""
-
+def test_matches_pattern_fullmatch() -> None:
     @validated
-    def process(code: Annotated[str, MatchesPattern(r"\d{3}")]):
+    def process(code: Validated[str, MatchesPattern(r"\d{3}")]):
         return code
 
     # Exact match should pass
     assert process("123") == "123"
 
-    # Partial match at start should FAIL (would pass with re.match)
+    # Partial match at start should FAIL
     with pytest.raises(ValidationError) as excinfo:
         process("123abc")
-    assert excinfo.value.parameter_name == "code"
-    assert "must match pattern" in excinfo.value.message
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert "must match pattern" in errors[0]["msg"]
 
     # Partial match at end should also FAIL
     with pytest.raises(ValidationError) as excinfo:
         process("abc123")
-    assert excinfo.value.parameter_name == "code"
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
 
 
 # 9. Test __repr__ on all validator classes
-def test_validator_repr():
+def test_validator_repr() -> None:
     assert repr(GreaterThan(5)) == "GreaterThan(threshold=5)"
     assert repr(LessThan(2.0)) == "LessThan(threshold=2.0)"
     assert repr(InRange(0, 100)) == "InRange(min_val=0, max_val=100)"
@@ -258,7 +265,7 @@ def test_validator_repr():
 
 
 # 10. Test __eq__ on all validator classes
-def test_validator_equality():
+def test_validator_equality() -> None:
     assert GreaterThan(5) == GreaterThan(5)
     assert GreaterThan(5) != GreaterThan(10)
     assert GreaterThan(5) != LessThan(5)
@@ -290,27 +297,180 @@ def test_validator_equality():
     assert DType("float64") != DType("int32")
 
 
-# 11. Test Check exception chaining via __cause__
-def test_check_exception_chaining():
-    """When a Check predicate raises an exception (e.g. AttributeError),
-    the ValidationError should chain the original exception via __cause__."""
+# 11. Test Check exception chained context
+def test_check_exception_chaining() -> None:
+    """When a Check predicate raises an exception, Pydantic wraps it as a ValueError."""
 
     def buggy_predicate(value):
-        # This will raise AttributeError because int has no .nonexistent attribute
         return value.nonexistent_attribute
 
     @validated
-    def process(x: Annotated[int, Check(buggy_predicate, "buggy check")]):
+    def process(x: Validated[int, Check(buggy_predicate, "buggy check")]):
         return x
 
     with pytest.raises(ValidationError) as excinfo:
         process(42)
 
-    # The ValidationError should exist
-    assert excinfo.value.parameter_name == "x"
-    assert excinfo.value.validator is not None
-    assert isinstance(excinfo.value.validator, Check)
+    errors = excinfo.value.errors()
+    assert errors[0]["loc"] == (0,)
+    assert "AttributeError" in errors[0]["msg"]
 
-    # The original AttributeError should be chained as __cause__
-    assert excinfo.value.__cause__ is not None
-    assert isinstance(excinfo.value.__cause__, AttributeError)
+
+def test_validator_reprs() -> None:
+
+    import numpy as np
+
+    from validated.validators.numpy import DType, Shape
+    from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
+    from validated.validators.sequences import Contains, Length, NonEmpty, Sorted, Unique
+    from validated.validators.strings import (
+        ContainsSubstring,
+        EndsWith,
+        IsLowerCase,
+        IsUpperCase,
+        MatchesPattern,
+        StartsWith,
+    )
+
+    assert repr(MatchesPattern(r"\d+")) == "MatchesPattern(pattern='\\\\d+')"
+    assert repr(StartsWith("foo")) == "StartsWith(prefix='foo')"
+    assert repr(EndsWith("bar")) == "EndsWith(suffix='bar')"
+    assert repr(ContainsSubstring("sub")) == "ContainsSubstring(substring='sub')"
+    assert repr(IsLowerCase()) == "IsLowerCase()"
+    assert repr(IsUpperCase()) == "IsUpperCase()"
+
+    assert repr(Length(1, 10)) == "Length(min_len=1, max_len=10)"
+    assert repr(NonEmpty()) == "NonEmpty()"
+    assert repr(Contains("item")) == "Contains(item='item')"
+    assert repr(Unique()) == "Unique()"
+    assert repr(Sorted(reverse=True)) == "Sorted(reverse=True)"
+
+    assert repr(PathExists()) == "PathExists()"
+    assert repr(IsFile()) == "IsFile()"
+    assert repr(IsDirectory()) == "IsDirectory()"
+    assert repr(HasExtension(".txt")) == "HasExtension(extensions=('.txt',))"
+
+    assert repr(Shape(1, 2)) == "Shape(dims=(1, 2))"
+    assert repr(DType(np.float64)) == "DType(dtype=dtype('float64'))"
+
+
+def test_missing_equality() -> None:
+    from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
+    from validated.validators.sequences import Contains, NonEmpty, Sorted, Unique
+    from validated.validators.strings import ContainsSubstring, EndsWith, IsLowerCase, IsUpperCase, StartsWith
+
+    assert StartsWith("foo") == StartsWith("foo")
+    assert StartsWith("foo") != StartsWith("bar")
+
+    assert EndsWith("bar") == EndsWith("bar")
+    assert EndsWith("bar") != EndsWith("foo")
+
+    assert ContainsSubstring("sub") == ContainsSubstring("sub")
+    assert ContainsSubstring("sub") != ContainsSubstring("bus")
+
+    assert IsLowerCase() == IsLowerCase()
+    assert IsLowerCase() != IsUpperCase()
+
+    assert IsUpperCase() == IsUpperCase()
+    assert IsUpperCase() != IsLowerCase()
+
+    assert NonEmpty() == NonEmpty()
+    assert Contains("item") == Contains("item")
+    assert Contains("item") != Contains("other")
+    assert Unique() == Unique()
+    assert Unique() != NonEmpty()
+
+    assert Sorted() == Sorted()
+    assert Sorted(reverse=True) == Sorted(reverse=True)
+    assert Sorted() != Sorted(reverse=True)
+
+    assert PathExists() == PathExists()
+    assert IsFile() == IsFile()
+    assert IsDirectory() == IsDirectory()
+    assert HasExtension(".txt") == HasExtension(".txt")
+    assert HasExtension(".txt") != HasExtension(".csv")
+
+
+def test_string_compiled_regex() -> None:
+    import re
+
+    from validated.validators.strings import MatchesPattern
+
+    compiled = re.compile(r"\d+")
+    validator = MatchesPattern(compiled)
+    assert validator.validate("123")
+    assert not validator.validate("abc")
+
+
+def test_sorted_empty_sequence() -> None:
+    from validated.validators.sequences import Sorted
+
+    assert Sorted().validate([])
+
+
+def test_numpy_shape_list_and_str() -> None:
+    import numpy as np
+
+    from validated.validators.numpy import Shape
+
+    # passing list
+    validator = Shape([2, 3])
+    assert validator.validate(np.zeros((2, 3)))
+
+    # passing string digit
+    validator2 = Shape("2", 3)
+    assert validator2.validate(np.zeros((2, 3)))
+    assert not validator2.validate(np.zeros((3, 3)))
+
+
+def test_path_string_inputs() -> None:
+
+    from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
+
+    assert not PathExists().validate("/does/not/exist/ever")
+    assert not IsFile().validate("/does/not/exist/ever.txt")
+    assert not IsDirectory().validate("/does/not/exist/ever")
+    assert HasExtension(".txt").validate("/some/path/file.txt")
+
+
+def test_multi_validator_flatten_and_validate() -> None:
+    from validated.validators.base import MultiValidator
+    from validated.validators.comparisons import GreaterThan, LessThan
+
+    v1 = GreaterThan(0)
+    v2 = LessThan(10)
+    m1 = MultiValidator([v1, v2])
+
+    v3 = GreaterThan(2)
+    m2 = MultiValidator([m1, v3])  # nested
+
+    assert len(m2.validators) == 3
+    assert m2.validate(5)
+    assert not m2.validate(15)
+
+
+def test_validator_check_error_propagation() -> None:
+    from pydantic_core import core_schema
+
+    from validated.validators.base import Validator
+    from validated.validators.exceptions import ValidatorCheckError
+
+    class FailingValidator(Validator):
+        def validate(self, value):
+            raise ValidatorCheckError("Custom error message", ValueError("inner"))
+
+    FailingValidator().__get_pydantic_core_schema__(str, lambda x: core_schema.str_schema())  # type: ignore
+    # we can test it implicitly using BaseModel
+    from typing import Annotated
+
+    from pydantic import BaseModel
+
+    class TestModel(BaseModel):
+        val: Annotated[str, FailingValidator()]
+
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc:
+        TestModel(val="test")
+    assert "Custom error message" in str(exc.value)

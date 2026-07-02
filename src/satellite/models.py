@@ -1,5 +1,4 @@
 import numpy as np
-from pydantic import ConfigDict
 
 from validated import DType, GreaterThan, InRange, Length, LessThan, Shape, Validated, ValidatorBaseModel
 
@@ -17,7 +16,6 @@ class SolarPanelState(ValidatorBaseModel):
 
 
 class ACSState(ValidatorBaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
     reaction_wheel_speeds: Validated[np.ndarray, Shape(3), DType(np.float64)]  # shape (3,), float64
     momentum_wheel_speed: float  # scalar, rpm
     pointing_deviation: Validated[float, InRange(0.0, 180.0)]  # degrees (0 = perfect alignment)

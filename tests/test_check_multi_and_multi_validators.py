@@ -1,30 +1,29 @@
 """Tests to verify:
 1. Check() works with multi-parameter error collection
-2. Multiple validators in a single Annotated[] work correctly
+2. Multiple validators in a single Validated[] work correctly
 """
 
-from typing import Annotated
-
 import pytest
+from pydantic import ValidationError
 
 from validated import (
     Check,
     GreaterThan,
     LessThan,
-    ValidationError,
+    Validated,
     validated,
 )
 
 # ── Scenario 1: Check() with multi-parameter error collection ──────────
 
 
-def test_check_multi_param_returning_false():
+def test_check_multi_param_returning_false() -> None:
     """Two params both using Check() that returns False — errors should be collected."""
 
     @validated
     def func(
-        a: Annotated[int, Check(lambda v: v > 0, "must be positive")],
-        b: Annotated[int, Check(lambda v: v % 2 == 0, "must be even")],
+        a: Validated[int, Check(lambda v: v > 0, "must be positive")],
+        b: Validated[int, Check(lambda v: v % 2 == 0, "must be even")],
     ):
         return a, b
 
@@ -32,19 +31,17 @@ def test_check_multi_param_returning_false():
     with pytest.raises(ValidationError) as excinfo:
         func(-1, 3)
 
-    errs = excinfo.value.errors
+    errs = excinfo.value.errors()
     assert len(errs) == 2, f"Expected 2 errors, got {len(errs)}: {errs}"
 
-    assert errs[0].parameter_name == "a"
-    assert isinstance(errs[0].validator, Check)
-    assert "must be positive" in errs[0].message
+    assert errs[0]["loc"] == (0,)
+    assert "must be positive" in errs[0]["msg"]
 
-    assert errs[1].parameter_name == "b"
-    assert isinstance(errs[1].validator, Check)
-    assert "must be even" in errs[1].message
+    assert errs[1]["loc"] == (1,)
+    assert "must be even" in errs[1]["msg"]
 
 
-def test_check_multi_param_raising_exception():
+def test_check_multi_param_raising_exception() -> None:
     """Two params both using Check() where the predicate raises — errors should be collected."""
 
     def needs_len(v):
@@ -52,121 +49,119 @@ def test_check_multi_param_raising_exception():
 
     @validated
     def func(
-        a: Annotated[int, Check(needs_len, "needs length")],
-        b: Annotated[int, Check(needs_len, "needs length")],
+        a: Validated[int, Check(needs_len, "needs length")],
+        b: Validated[int, Check(needs_len, "needs length")],
     ):
         return a, b
 
     with pytest.raises(ValidationError) as excinfo:
         func(42, 99)
 
-    errs = excinfo.value.errors
+    errs = excinfo.value.errors()
     assert len(errs) == 2, f"Expected 2 errors, got {len(errs)}: {errs}"
 
-    assert errs[0].parameter_name == "a"
-    assert isinstance(errs[0].validator, Check)
-    assert errs[0].__cause__ is not None  # original exception chained
+    assert errs[0]["loc"] == (0,)
+    assert "TypeError" in errs[0]["msg"]
 
-    assert errs[1].parameter_name == "b"
-    assert isinstance(errs[1].validator, Check)
-    assert errs[1].__cause__ is not None
+    assert errs[1]["loc"] == (1,)
+    assert "TypeError" in errs[1]["msg"]
 
 
-def test_check_mixed_with_builtin_validators_multi_param():
+def test_check_mixed_with_builtin_validators_multi_param() -> None:
     """Mix of Check() and built-in validators across params, all failing."""
 
     @validated
     def func(
-        a: Annotated[int, Check(lambda v: v > 0, "must be positive")],
-        b: Annotated[float, LessThan(0.0)],
-        c: Annotated[int, Check(lambda v: v % 2 == 0, "must be even")],
+        a: Validated[int, Check(lambda v: v > 0, "must be positive")],
+        b: Validated[float, LessThan(0.0)],
+        c: Validated[int, Check(lambda v: v % 2 == 0, "must be even")],
     ):
         return a, b, c
 
     with pytest.raises(ValidationError) as excinfo:
         func(-1, 5.0, 3)
 
-    errs = excinfo.value.errors
+    errs = excinfo.value.errors()
     assert len(errs) == 3, f"Expected 3 errors, got {len(errs)}: {errs}"
 
-    assert errs[0].parameter_name == "a"
-    assert isinstance(errs[0].validator, Check)
+    assert errs[0]["loc"] == (0,)
+    assert "must be positive" in errs[0]["msg"]
 
-    assert errs[1].parameter_name == "b"
-    assert isinstance(errs[1].validator, LessThan)
+    assert errs[1]["loc"] == (1,)
+    assert "must be less than 0.0" in errs[1]["msg"]
 
-    assert errs[2].parameter_name == "c"
-    assert isinstance(errs[2].validator, Check)
-
-
-# ── Scenario 2: Multiple validators in one Annotated[] ─────────────────
+    assert errs[2]["loc"] == (2,)
+    assert "must be even" in errs[2]["msg"]
 
 
-def test_multiple_validators_single_param_first_fails():
-    """Annotated with two validators; the first one fails."""
+# ── Scenario 2: Multiple validators in one Validated[] ─────────────────
+
+
+def test_multiple_validators_single_param_first_fails() -> None:
+    """Validated with two validators; the first one fails."""
 
     @validated
-    def func(x: Annotated[int, GreaterThan(0), LessThan(100)]):
+    def func(x: Validated[int, GreaterThan(0), LessThan(100)]):
         return x
 
     with pytest.raises(ValidationError) as excinfo:
         func(-5)
 
-    assert excinfo.value.parameter_name == "x"
-    assert isinstance(excinfo.value.validator, GreaterThan)
-    assert "must be greater than 0" in excinfo.value.message
+    errs = excinfo.value.errors()
+    assert errs[0]["loc"] == (0,)
+    assert "must be greater than 0" in errs[0]["msg"]
 
 
-def test_multiple_validators_single_param_second_fails():
-    """Annotated with two validators; value passes first, fails second."""
+def test_multiple_validators_single_param_second_fails() -> None:
+    """Validated with two validators; value passes first, fails second."""
 
     @validated
-    def func(x: Annotated[int, GreaterThan(0), LessThan(100)]):
+    def func(x: Validated[int, GreaterThan(0), LessThan(100)]):
         return x
 
     with pytest.raises(ValidationError) as excinfo:
         func(150)
 
-    assert excinfo.value.parameter_name == "x"
-    assert isinstance(excinfo.value.validator, LessThan)
-    assert "must be less than 100" in excinfo.value.message
+    errs = excinfo.value.errors()
+    assert errs[0]["loc"] == (0,)
+    assert "must be less than 100" in errs[0]["msg"]
 
 
-def test_multiple_validators_single_param_both_pass():
-    """Annotated with two validators; value satisfies both."""
+def test_multiple_validators_single_param_both_pass() -> None:
+    """Validated with two validators; value satisfies both."""
 
     @validated
-    def func(x: Annotated[int, GreaterThan(0), LessThan(100)]):
+    def func(x: Validated[int, GreaterThan(0), LessThan(100)]):
         return x
 
     assert func(50) == 50
 
 
-def test_multiple_validators_single_param_both_fail():
-    """Annotated with two validators; value fails both and both errors are reported."""
+def test_multiple_validators_single_param_both_fail() -> None:
+    """Validated with two validators; value fails both and both errors are reported."""
 
     @validated
-    def func(x: Annotated[int, GreaterThan(10), LessThan(5)]):
+    def func(x: Validated[int, GreaterThan(10), LessThan(5)]):
         return x
 
     # value 7: fails GreaterThan(10) and LessThan(5)
     with pytest.raises(ValidationError) as excinfo:
         func(7)
 
-    errs = excinfo.value.errors
-    assert len(errs) == 2
-    assert errs[0].parameter_name == "x"
-    assert isinstance(errs[0].validator, GreaterThan)
-    assert errs[1].parameter_name == "x"
-    assert isinstance(errs[1].validator, LessThan)
+    errs = excinfo.value.errors()
+    # Pydantic receives ValueError with multiple lines from MultiValidator
+    assert len(errs) == 1
+    msg = errs[0]["msg"]
+    assert "must be greater than 10" in msg
+    assert "must be less than 5" in msg
 
 
-def test_multiple_validators_with_check_in_annotated():
+def test_multiple_validators_with_check_in_validated() -> None:
     """Mix of built-in and Check() validators on one parameter."""
 
     @validated
     def func(
-        x: Annotated[int, GreaterThan(0), Check(lambda v: v % 2 == 0, "must be even")],
+        x: Validated[int, GreaterThan(0), Check(lambda v: v % 2 == 0, "must be even")],
     ):
         return x
 
@@ -176,23 +171,21 @@ def test_multiple_validators_with_check_in_annotated():
     # Fails GreaterThan
     with pytest.raises(ValidationError) as excinfo:
         func(-2)
-    assert isinstance(excinfo.value.validator, GreaterThan)
+    assert "must be greater than 0" in excinfo.value.errors()[0]["msg"]
 
     # Passes GreaterThan, fails Check
     with pytest.raises(ValidationError) as excinfo:
         func(3)
-    assert isinstance(excinfo.value.validator, Check)
-    assert "must be even" in excinfo.value.message
+    assert "must be even" in excinfo.value.errors()[0]["msg"]
 
 
-def test_multiple_validators_multi_param_error_collection():
-    """Two params each with multiple validators — errors collected across params,
-    but only first-failing validator per param."""
+def test_multiple_validators_multi_param_error_collection() -> None:
+    """Two params each with multiple validators — errors collected across params."""
 
     @validated
     def func(
-        x: Annotated[int, GreaterThan(0), LessThan(100)],
-        y: Annotated[int, GreaterThan(10), LessThan(50)],
+        x: Validated[int, GreaterThan(0), LessThan(100)],
+        y: Validated[int, GreaterThan(10), LessThan(50)],
     ):
         return x, y
 
@@ -200,51 +193,51 @@ def test_multiple_validators_multi_param_error_collection():
     with pytest.raises(ValidationError) as excinfo:
         func(-5, 5)
 
-    errs = excinfo.value.errors
+    errs = excinfo.value.errors()
     assert len(errs) == 2
 
-    assert errs[0].parameter_name == "x"
-    assert isinstance(errs[0].validator, GreaterThan)
+    assert errs[0]["loc"] == (0,)
+    assert "must be greater than 0" in errs[0]["msg"]
 
-    assert errs[1].parameter_name == "y"
-    assert isinstance(errs[1].validator, GreaterThan)
+    assert errs[1]["loc"] == (1,)
+    assert "must be greater than 10" in errs[1]["msg"]
 
 
-def test_check_in_var_positional_multi_errors():
+def test_check_in_var_positional_multi_errors() -> None:
     """Check() validator on *args with multiple failures."""
 
     @validated
-    def func(*items: Annotated[int, Check(lambda v: v > 0, "must be positive")]):
+    def func(*items: Validated[int, Check(lambda v: v > 0, "must be positive")]):
         return items
 
     with pytest.raises(ValidationError) as excinfo:
         func(1, -2, 3, -4)
 
-    errs = excinfo.value.errors
+    errs = excinfo.value.errors()
     assert len(errs) == 2
 
-    assert errs[0].parameter_name == "items[1]"
-    assert errs[0].value == -2
+    assert errs[0]["loc"] == (1,)
+    assert errs[0]["input"] == -2
 
-    assert errs[1].parameter_name == "items[3]"
-    assert errs[1].value == -4
+    assert errs[1]["loc"] == (3,)
+    assert errs[1]["input"] == -4
 
 
-def test_check_in_var_keyword_multi_errors():
+def test_check_in_var_keyword_multi_errors() -> None:
     """Check() validator on **kwargs with multiple failures."""
 
     @validated
     def func(
-        **opts: Annotated[str, Check(lambda v: v.startswith("x"), "must start with x")],
+        **opts: Validated[str, Check(lambda v: v.startswith("x"), "must start with x")],
     ):
         return opts
 
     with pytest.raises(ValidationError) as excinfo:
         func(a="xfoo", b="bar", c="xbaz", d="qux")
 
-    errs = excinfo.value.errors
+    errs = excinfo.value.errors()
     assert len(errs) == 2
 
-    param_names = [e.parameter_name for e in errs]
-    assert "opts['b']" in param_names
-    assert "opts['d']" in param_names
+    param_names = [e["loc"] for e in errs]
+    assert ("b",) in param_names
+    assert ("d",) in param_names

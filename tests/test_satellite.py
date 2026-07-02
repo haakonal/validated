@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from satellite.models import (
     ACSState,
@@ -15,10 +16,9 @@ from satellite.validation import (
     validate_subsystem_diagnostics,
     validate_task,
 )
-from validated import ValidationError
 
 
-def test_valid_charging_mode():
+def test_valid_charging_mode() -> None:
     telemetry = SatelliteTelemetry(
         mode="charging",
         battery=BatteryState(charge_level=80.0, status="charging", temperature=20.0, current_draw=10.0),
@@ -36,7 +36,7 @@ def test_valid_charging_mode():
     assert check_telemetry(telemetry) is True
 
 
-def test_charging_mode_violations():
+def test_charging_mode_violations() -> None:
     # 1. Panels folded
     telemetry = SatelliteTelemetry(
         mode="charging",
@@ -54,8 +54,9 @@ def test_charging_mode_violations():
     )
     with pytest.raises(ValidationError) as excinfo:
         check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "panels_deployed"
-    assert "all solar panels must be deployed" in excinfo.value.message
+    err = excinfo.value.errors()[0]
+    assert err["loc"] == ("panels_deployed",)
+    assert "all solar panels must be deployed" in err["msg"]
 
     # 2. Net power is negative/zero
     telemetry.panels[1].deployed = True
@@ -64,7 +65,7 @@ def test_charging_mode_violations():
     telemetry.battery.current_draw = 15.0  # generated (10) < draw (15)
     with pytest.raises(ValidationError) as excinfo:
         check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "net_power"
+    assert excinfo.value.errors()[0]["loc"] == ("net_power",)
 
     # 3. Battery status not charging
     telemetry.panels[0].power_generated = 40.0
@@ -73,24 +74,24 @@ def test_charging_mode_violations():
     telemetry.battery.status = "discharging"
     with pytest.raises(ValidationError) as excinfo:
         check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "battery_status"
+    assert excinfo.value.errors()[0]["loc"] == ("battery_status",)
 
     # 4. Charge level too low (< 50)
     telemetry.battery.status = "charging"
     telemetry.battery.charge_level = 45.0
     with pytest.raises(ValidationError) as excinfo:
         check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "battery_charge_level"
+    assert excinfo.value.errors()[0]["loc"] == ("battery_charge_level",)
 
     # 5. Sun deviation too high (>= 5.0)
     telemetry.battery.charge_level = 75.0
     telemetry.acs.pointing_deviation = 5.1
     with pytest.raises(ValidationError) as excinfo:
         check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "sun_pointing_deviation"
+    assert excinfo.value.errors()[0]["loc"] == ("sun_pointing_deviation",)
 
 
-def test_valid_data_collection_mode():
+def test_valid_data_collection_mode() -> None:
     telemetry = SatelliteTelemetry(
         mode="data_collection",
         battery=BatteryState(charge_level=90.0, status="discharging", temperature=15.0, current_draw=80.0),
@@ -108,7 +109,7 @@ def test_valid_data_collection_mode():
     assert check_telemetry(telemetry) is True
 
 
-def test_data_collection_mode_violations():
+def test_data_collection_mode_violations() -> None:
     # 1. Temperature too high (> 40.0)
     telemetry = SatelliteTelemetry(
         mode="data_collection",
@@ -126,35 +127,33 @@ def test_data_collection_mode_violations():
     )
     with pytest.raises(ValidationError) as excinfo:
         check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "battery_temperature"
+    assert excinfo.value.errors()[0]["loc"] == ("battery_temperature",)
 
     # 2. Ground station not visible
     telemetry.battery.temperature = 25.0
     telemetry.comms.ground_station_visible = False
     with pytest.raises(ValidationError) as excinfo:
         check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "ground_station_visible"
+    assert excinfo.value.errors()[0]["loc"] == ("ground_station_visible",)
 
     # 3. Draw limit exceeded (> 150.0)
     telemetry.comms.ground_station_visible = True
     telemetry.battery.current_draw = 160.0
     with pytest.raises(ValidationError) as excinfo:
         check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "power_margin"
+    assert excinfo.value.errors()[0]["loc"] == ("power_margin",)
 
     # 4. Pointing deviation too high (>= 1.0)
     telemetry.battery.current_draw = 80.0
     telemetry.acs.pointing_deviation = 1.2
     with pytest.raises(ValidationError) as excinfo:
         check_telemetry(telemetry)
-    assert excinfo.value.parameter_name == "target_pointing_deviation"
+    assert excinfo.value.errors()[0]["loc"] == ("target_pointing_deviation",)
 
 
-def test_acs_numpy_constraints():
-    from pydantic import ValidationError as PydanticValidationError
-
+def test_acs_numpy_constraints() -> None:
     # Shape mismatch (4 dimensions instead of 3)
-    with pytest.raises(PydanticValidationError) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         ACSState(
             reaction_wheel_speeds=np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64),
             momentum_wheel_speed=2000.0,
@@ -163,7 +162,7 @@ def test_acs_numpy_constraints():
     assert "does not match expected shape" in str(excinfo.value)
 
     # DType mismatch (float32 instead of float64)
-    with pytest.raises(PydanticValidationError) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         ACSState(
             reaction_wheel_speeds=np.array([100.0, 200.0, 300.0], dtype=np.float32),
             momentum_wheel_speed=2000.0,
@@ -172,29 +171,31 @@ def test_acs_numpy_constraints():
     assert "does not match expected dtype" in str(excinfo.value)
 
 
-def test_selective_validation():
+def test_selective_validation() -> None:
     # 1. Valid inputs (with coercion)
     # "ACS-101" is matched to pattern; "25" is coerced to float; raw_telemetry is Any
-    assert validate_subsystem_diagnostics("ACS-101", "25", {"some": "data"}) is True
+    assert validate_subsystem_diagnostics("ACS-101", "25", {"some": "data"}) is True  # type: ignore
 
     # 2. Invalid inputs on full validation parameter (pattern mismatch)
     with pytest.raises(ValidationError) as excinfo:
         validate_subsystem_diagnostics("ACS-INVALID", 25.0, "ignored")
-    assert excinfo.value.parameter_name == "subsystem_id"
-    assert "must match pattern" in excinfo.value.message
+    err = excinfo.value.errors()[0]
+    assert err["loc"] == (0,)
+    assert "must match pattern" in err["msg"]
 
     # 3. Invalid inputs on type-only validation parameter (not coercible to float)
     with pytest.raises(ValidationError) as excinfo:
-        validate_subsystem_diagnostics("ACS-101", "not-a-float", "ignored")
-    assert excinfo.value.parameter_name == "temperature_offset"
-    assert "type validation failed" in excinfo.value.message
+        validate_subsystem_diagnostics("ACS-101", "not-a-float", "ignored")  # type: ignore
+    err = excinfo.value.errors()[0]
+    assert err["loc"] == (1,)
+    assert "valid number" in err["msg"]
 
     # 4. Any input on unvalidated parameter (even completely invalid type/data)
     assert validate_subsystem_diagnostics("ACS-101", 25.0, None) is True
     assert validate_subsystem_diagnostics("ACS-101", 25.0, 12345) is True
 
 
-def test_task_validation():
+def test_task_validation() -> None:
     # 1. Valid Slew Task — construction succeeds (validation passes)
     valid_slew = SlewTask(
         poi_name="Paris_Observation",
@@ -207,9 +208,7 @@ def test_task_validation():
     assert validate_task(valid_slew) is True
 
     # 2. Slew Task with exceeded slew speed — fails at construction time
-    from pydantic import ValidationError as PydanticValidationError
-
-    with pytest.raises(PydanticValidationError) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         SlewTask(
             poi_name="Paris_Observation",
             target_yaw=12.5,
@@ -221,7 +220,7 @@ def test_task_validation():
     assert "must be less than 2.0" in str(excinfo.value)
 
     # 3. Slew Task with poor coverage — fails at construction time
-    with pytest.raises(PydanticValidationError) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         SlewTask(
             poi_name="Paris_Observation",
             target_yaw=12.5,
@@ -242,7 +241,7 @@ def test_task_validation():
     assert validate_task(valid_imaging) is True
 
     # 5. Imaging Task with too many spectral bands — fails at construction time
-    with pytest.raises(PydanticValidationError) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         ImagingTask(
             target_poi="London_POI",
             exposure_time=1.2,

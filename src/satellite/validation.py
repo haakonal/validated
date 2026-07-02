@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Any
 
 import numpy as np
 
@@ -12,6 +12,7 @@ from validated import (
     LessThan,
     MatchesPattern,
     Shape,
+    Validated,
     validated,
 )
 
@@ -19,7 +20,7 @@ from validated import (
 # 1. Base function to check reaction wheel array shapes and types
 @validated
 def check_reaction_wheels(
-    wheel_speeds: Annotated[np.ndarray, Shape(3), DType(np.float64)],
+    wheel_speeds: Validated[np.ndarray, Shape(3), DType(np.float64)],
 ) -> bool:
     return True
 
@@ -27,12 +28,12 @@ def check_reaction_wheels(
 # 2. Validation function for Charging Mode
 @validated
 def validate_charging_telemetry(
-    panels_deployed: Annotated[bool, Check(lambda x: x is True, "all solar panels must be deployed")],
-    net_power: Annotated[float, GreaterThan(0.0)],
-    battery_status: Annotated[str, Check(lambda s: s == "charging", "battery status must be 'charging'")],
-    battery_charge_level: Annotated[float, InRange(50.0, 100.0)],
-    sun_pointing_deviation: Annotated[float, LessThan(5.0)],
-    reaction_wheel_speeds: Annotated[np.ndarray, Shape(3), DType(np.float64)],
+    panels_deployed: Validated[bool, Check(lambda x: x is True, "all solar panels must be deployed")],
+    net_power: Validated[float, GreaterThan(0.0)],
+    battery_status: Validated[str, Check(lambda s: s == "charging", "battery status must be 'charging'")],
+    battery_charge_level: Validated[float, InRange(50.0, 100.0)],
+    sun_pointing_deviation: Validated[float, LessThan(5.0)],
+    reaction_wheel_speeds: Validated[np.ndarray, Shape(3), DType(np.float64)],
 ) -> bool:
     return True
 
@@ -40,12 +41,12 @@ def validate_charging_telemetry(
 # 3. Validation function for Data Collection Mode
 @validated
 def validate_data_collection_telemetry(
-    battery_temperature: Annotated[float, InRange(-10.0, 40.0)],
-    ground_station_visible: Annotated[bool, Check(lambda x: x is True, "ground station must be visible")],
-    power_margin: Annotated[float, GreaterThan(0.0)],  # Margin between max draw and current draw
-    battery_charge_level: Annotated[float, InRange(50.0, 100.0)],
-    target_pointing_deviation: Annotated[float, LessThan(1.0)],
-    reaction_wheel_speeds: Annotated[np.ndarray, Shape(3), DType(np.float64)],
+    battery_temperature: Validated[float, InRange(-10.0, 40.0)],
+    ground_station_visible: Validated[bool, Check(lambda x: x is True, "ground station must be visible")],
+    power_margin: Validated[float, GreaterThan(0.0)],  # Margin between max draw and current draw
+    battery_charge_level: Validated[float, InRange(50.0, 100.0)],
+    target_pointing_deviation: Validated[float, LessThan(1.0)],
+    reaction_wheel_speeds: Validated[np.ndarray, Shape(3), DType(np.float64)],
 ) -> bool:
     return True
 
@@ -98,7 +99,7 @@ def check_telemetry(telemetry: SatelliteTelemetry, max_battery_draw: float = 150
 @validated
 def validate_subsystem_diagnostics(
     # Full validation: coerced to str + matched against regex pattern
-    subsystem_id: Annotated[str, MatchesPattern(r"^(ACS|PWR|COM)-\d{3}$")],
+    subsystem_id: Validated[str, MatchesPattern(r"^(ACS|PWR|COM)-\d{3}$")],
     # Type-only validation: coerced to float, no value/range constraints checked
     temperature_offset: float,
     # No validation: completely skipped (no type coercion, no checks)
@@ -119,9 +120,9 @@ def validate_subsystem_diagnostics(
 # They are kept here to demonstrate the @validated decorator approach side-by-side.
 @validated
 def validate_slew_task(
-    poi_name: Annotated[str, Length(min_len=1)],
-    max_slew_speed: Annotated[float, LessThan(2.0)],  # Max 2 deg/s speed
-    predicted_coverage: Annotated[float, InRange(80.0, 100.0)],  # Min 80% coverage
+    poi_name: Validated[str, Length(min_len=1)],
+    max_slew_speed: Validated[float, LessThan(2.0)],  # Max 2 deg/s speed
+    predicted_coverage: Validated[float, InRange(80.0, 100.0)],  # Min 80% coverage
 ) -> bool:
     return True
 
@@ -129,10 +130,10 @@ def validate_slew_task(
 # 6. Imaging Task pre-commit validation (decorator approach — kept for comparison)
 @validated
 def validate_imaging_task(
-    target_poi: Annotated[str, Length(min_len=1)],
-    exposure_time: Annotated[float, InRange(0.01, 5.0)],  # 10ms to 5s
-    cloud_cover_limit: Annotated[float, LessThan(20.0)],  # Max 20% cloud cover
-    spectral_bands: Annotated[list[str], Length(min_len=1, max_len=5)],  # 1 to 5 bands
+    target_poi: Validated[str, Length(min_len=1)],
+    exposure_time: Validated[float, InRange(0.01, 5.0)],  # 10ms to 5s
+    cloud_cover_limit: Validated[float, LessThan(20.0)],  # Max 20% cloud cover
+    spectral_bands: Validated[list[str], Length(min_len=1, max_len=5)],  # 1 to 5 bands
 ) -> bool:
     return True
 
