@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
@@ -62,27 +62,3 @@ class DType(Validator):
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, DType) and self.expected_dtype == other.expected_dtype
-
-
-class _NDArrayMeta(type):
-    """Metaclass to support NDArray[dtype] syntax."""
-
-    def __getitem__(cls, dtype: Any) -> Any:
-        from validated.validators.base import Validated
-
-        # NDArray[np.float64] -> Validated[np.ndarray, DType(np.float64)]
-        return Validated[np.ndarray, DType(dtype)]
-
-
-if TYPE_CHECKING:
-    from typing import Annotated as NDArray
-else:
-
-    class NDArray(metaclass=_NDArrayMeta):
-        """
-        A type annotation for NumPy arrays with a specific dtype.
-        Usage: NDArray[np.float64]
-        
-        This translates to Validated[np.ndarray, DType(np.float64)]
-        """
-        pass

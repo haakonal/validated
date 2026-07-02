@@ -9,12 +9,13 @@ import numpy as np
 from pydantic import ConfigDict, validate_call
 from pydantic import ValidationError as PydanticValidationError
 
-from validated import Check, DType, GreaterThan, InRange, LessThan, Length, MatchesPattern, Shape
+from validated import Check, DType, GreaterThan, InRange, Length, LessThan, MatchesPattern, Shape
 
 # ── Test 1: Basic numeric validators ──────────────────────────────────────
 print("=" * 60)
 print("Test 1: Basic numeric validators with @validate_call")
 print("=" * 60)
+
 
 @validate_call
 def process_numbers(
@@ -23,6 +24,7 @@ def process_numbers(
     percent: Annotated[float, InRange(0.0, 100.0)],
 ) -> float:
     return pos + neg + percent
+
 
 # Valid
 try:
@@ -56,12 +58,14 @@ print("=" * 60)
 print("Test 2: String validators")
 print("=" * 60)
 
+
 @validate_call
 def process_strings(
     username: Annotated[str, Length(min_len=3, max_len=10)],
     email: Annotated[str, MatchesPattern(r"^[^@]+@[^@]+\.[^@]+$")],
 ):
     return username, email
+
 
 try:
     result = process_strings("alice", "alice@example.com")
@@ -85,9 +89,11 @@ print("=" * 60)
 print("Test 3: Check() validator")
 print("=" * 60)
 
+
 @validate_call
 def process_even(x: Annotated[int, Check(lambda v: v % 2 == 0, "must be even")]):
     return x
+
 
 try:
     result = process_even(4)
@@ -112,6 +118,7 @@ print("Test 4: NumPy ndarray with arbitrary_types_allowed")
 print("=" * 60)
 
 try:
+
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def process_array(
         arr: Annotated[np.ndarray, Shape(None, 3), DType(np.float32)],
@@ -163,6 +170,7 @@ print("Test 5: *args and **kwargs")
 print("=" * 60)
 
 try:
+
     @validate_call
     def process_many(
         *items: Annotated[int, GreaterThan(0)],
@@ -193,6 +201,7 @@ print("Test 6: Return value validation")
 print("=" * 60)
 
 try:
+
     @validate_call(validate_return=True)
     def get_positive(x: int) -> Annotated[int, GreaterThan(0)]:
         return x
@@ -220,6 +229,7 @@ print("Test 7: Multiple validators on same Annotated (both fail)")
 print("=" * 60)
 
 try:
+
     @validate_call
     def func_multi(x: Annotated[int, GreaterThan(10), LessThan(5)]):
         return x

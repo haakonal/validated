@@ -1,6 +1,6 @@
 from validated.validators.base import MultiValidator, Validated, Validator, ValidatorBaseModel
 from validated.validators.comparisons import GreaterThan, InRange, LessThan
-from validated.validators.numpy import DType, NDArray, Shape
+from validated.validators.numpy import DType, Shape
 from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
 from validated.validators.predicates import Check
 from validated.validators.sequences import Contains, Length, NonEmpty, Sorted, Unique
@@ -30,7 +30,6 @@ __all__ = [
     "LessThan",
     "MatchesPattern",
     "MultiValidator",
-    "NDArray",
     "NonEmpty",
     "PathExists",
     "Shape",

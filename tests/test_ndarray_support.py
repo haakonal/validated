@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 from pydantic import ValidationError
 
 from validated import (
-    NDArray,
     validated,
 )
 from validated.validators.numpy import DType, Shape

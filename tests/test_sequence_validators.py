@@ -71,6 +71,7 @@ def test_sorted():
 def test_sequences_coverage():
     # Length TypeError
     from validated.validators.sequences import Length
+
     length_val = Length(min_len=1, max_len=5)
     assert not length_val.validate(123)
 

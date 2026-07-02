@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from satellite.models import (
     ACSState,
@@ -15,7 +16,6 @@ from satellite.validation import (
     validate_subsystem_diagnostics,
     validate_task,
 )
-from pydantic import ValidationError
 
 
 def test_valid_charging_mode():

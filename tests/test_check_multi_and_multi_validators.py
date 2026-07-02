@@ -2,6 +2,7 @@
 1. Check() works with multi-parameter error collection
 2. Multiple validators in a single Validated[] work correctly
 """
+
 import pytest
 from pydantic import ValidationError
 
