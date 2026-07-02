@@ -23,17 +23,28 @@ graph TD
     G --> H["Return Value"]
 ```
 
-#### A. [src/validated/models.py](src/validated/models.py)
-This file defines the class hierarchy of all validation rule classes.
-* **`Validator` Base Class**:
+#### A. [src/validated/validators/](src/validated/validators/)
+This directory contains the class hierarchy of all validation rule classes, categorized by domain.
+* **`Validator` Base Class (`base.py`)**:
   Defines the abstract interface: `validate(self, value) -> bool` and `error_message(self, value) -> str`.
-* **Standard Constraints**:
+* **Comparisons (`comparisons.py`)**:
   - `GreaterThan` & `LessThan`: Basic boundary checks.
   - `InRange`: Keeps numerical values inside a closed interval `[min_val, max_val]`.
-  - `Length`: Asserts string or list length criteria.
-  - `MatchesPattern`: Enforces regex constraints on strings.
+* **Strings (`strings.py`)**:
+  - `MatchesPattern`: Enforces regex constraints.
+  - `StartsWith`, `EndsWith`, `ContainsSubstring`: Substring checks.
+  - `IsLowerCase`, `IsUpperCase`: Casing constraints.
+* **Sequences (`sequences.py`)**:
+  - `Length`: Asserts minimum or maximum sequence lengths.
+  - `NonEmpty`: Ensures a sequence is not empty.
+  - `Contains`: Checks if a specific element is present.
+  - `Unique`: Ensures all elements in the sequence are unique.
+  - `Sorted`: Enforces ascending or descending order.
+* **Paths (`paths.py`)**:
+  - `PathExists`, `IsFile`, `IsDirectory`, `HasExtension`: Validates `pathlib.Path` or string representations of files and directories.
+* **Predicates (`predicates.py`)**:
   - `Check`: Accepts a custom predicate callable (like a lambda or function) and description, offering arbitrary custom checks.
-* **NumPy-specific Constraints**:
+* **NumPy-specific Constraints (`numpy.py`)**:
   - `Shape`: Inspects a NumPy array's `.shape` attribute and matches it to a predefined tuple template (supporting wildcard constraints using `-1`, `*`, or `None`).
   - `DType`: Validates the NumPy array's data type.
 * **Design Decision**: *Why class-based instead of pure functions?*
