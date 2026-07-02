@@ -10,11 +10,6 @@ def validated[T: Callable[..., Any]](func: T) -> T:
     Thin wrapper around @validate_call with arbitrary_types_allowed=True
     for NumPy ndarray support, and validate_return=True for return validation.
     """
-    from validated.validators.numpy import resolve_ndarray_annotation
-
-    for k, v in getattr(func, "__annotations__", {}).items():
-        func.__annotations__[k] = resolve_ndarray_annotation(v)
-
     # Use validate_call to create the decorator
     decorator = validate_call(
         config=ConfigDict(arbitrary_types_allowed=True),

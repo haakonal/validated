@@ -4,6 +4,7 @@ from numpy.typing import NDArray
 from pydantic import ValidationError
 
 from validated import (
+    Validated,
     validated,
 )
 from validated.validators.numpy import DType, Shape
@@ -11,7 +12,7 @@ from validated.validators.numpy import DType, Shape
 
 def test_ndarray_type_alias():
     @validated
-    def process(arr: NDArray[np.float64]):
+    def process(arr: Validated[NDArray[np.float64], DType(np.float64)]):
         return arr
 
     a = np.array([1.0, 2.0], dtype=np.float64)
@@ -19,23 +20,24 @@ def test_ndarray_type_alias():
 
     with pytest.raises(ValidationError) as excinfo:
         process(np.array([1, 2], dtype=np.int32))
-    errors = excinfo.value.errors()
-    assert errors[0]["loc"] == (0,)
-    assert "does not match expected dtype float64" in errors[0]["msg"]
+
+    err_str = str(excinfo.value)
+    assert "array dtype int32 does not match expected dtype float64" in err_str
 
 
 def test_ndarray_string_dtype():
     @validated
-    def process(arr: NDArray[np.float32]):
+    def process(arr: Validated[NDArray[np.float32], DType(np.float32)]):
         return arr
 
     a = np.array([1.0, 2.0], dtype=np.float32)
     assert np.array_equal(process(a), a)
 
     with pytest.raises(ValidationError) as excinfo:
-        process(np.array([1.0, 2.0], dtype=np.float64))
-    errors = excinfo.value.errors()
-    assert "does not match expected dtype float32" in errors[0]["msg"]
+        process(np.array([1, 2], dtype=np.int32))
+
+    err_str = str(excinfo.value)
+    assert "array dtype int32 does not match expected dtype float32" in err_str
 
 
 def test_numpy_coverage():
