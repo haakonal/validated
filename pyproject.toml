@@ -64,4 +64,4 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "--cov=src/validated --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=90 -ra"
+addopts = "--cov=src/validated --cov-branch --cov-fail-under=95 -ra"

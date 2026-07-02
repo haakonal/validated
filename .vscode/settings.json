@@ -1,8 +1,14 @@
 {
     "files.eol": "\r\n",
-    "python.testing.pytestArgs": [
-        "tests"
-    ],
+    "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "python.analysis.extraPaths": ["src"],
+    "python.testing.pytestArgs": [
+        "tests",
+        "--cov=src/validated",
+        "--cov=src/satellite",
+        "--cov-branch",
+        "--cov-fail-under=95",
+        "-ra"
+    ]
 }

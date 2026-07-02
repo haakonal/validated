@@ -1,4 +1,5 @@
 from validated.decorator import validated
+from validated.loaders import dump_validator, load_validator
 from validated.validators import (
     Check,
     Contains,
@@ -18,6 +19,7 @@ from validated.validators import (
     MultiValidator,
     NonEmpty,
     PathExists,
+    ProxyValidator,
     Shape,
     Sorted,
     StartsWith,
@@ -25,6 +27,7 @@ from validated.validators import (
     Validated,
     Validator,
     ValidatorBaseModel,
+    ValidatorProvider,
 )
 
 __all__ = [
@@ -46,6 +49,7 @@ __all__ = [
     "MultiValidator",
     "NonEmpty",
     "PathExists",
+    "ProxyValidator",
     "Shape",
     "Sorted",
     "StartsWith",
@@ -53,5 +57,8 @@ __all__ = [
     "Validated",
     "Validator",
     "ValidatorBaseModel",
+    "ValidatorProvider",
+    "dump_validator",
+    "load_validator",
     "validated",
 ]
