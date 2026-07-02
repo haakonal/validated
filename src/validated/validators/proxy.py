@@ -1,9 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from pydantic import GetCoreSchemaHandler
-from pydantic_core import CoreSchema, core_schema
-
 from validated.validators.base import Validator
 
 

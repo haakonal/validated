@@ -2,18 +2,13 @@ import pytest
 
 from validated.loaders import dump_validator, load_validator
 from validated.validators import (
-    Contains,
     DType,
-    EndsWith,
-    GreaterThan,
     HasExtension,
     InRange,
-    IsDirectory,
     Length,
     LessThan,
     MatchesPattern,
     NonEmpty,
-    PathExists,
     Shape,
     StartsWith,
 )
@@ -73,6 +68,13 @@ def test_load_and_dump_numpy_validators():
     # Shape converts dims to tuple, so it might dump as tuple. JSON serializer will handle tuple to list.
     assert dumped["type"] == "Shape"
     assert list(dumped["parameters"]["dims"]) == [None, 3]
+
+    v2 = load_validator({"type": "DType", "parameters": {"dtype": "float64"}})
+    assert isinstance(v2, DType)
+    assert str(v2.expected_dtype) == "float64"
+    dumped2 = dump_validator(v2)
+    assert dumped2["type"] == "DType"
+    assert dumped2["parameters"]["dtype"] == "float64"
 
 
 def test_load_and_dump_path_validators():

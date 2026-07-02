@@ -101,7 +101,7 @@ def dump_validator(validator: Validator) -> dict[str, Any]:
     elif type(validator) is HasExtension:
         parameters["extensions"] = list(validator.extensions)
     elif type(validator) is DType:
-        parameters["dtype"] = str(validator.dtype)
+        parameters["dtype"] = str(validator.expected_dtype)
     elif type(validator) is Shape:
         parameters["dims"] = validator.dims
     elif type(validator) is Sorted:
