@@ -1,5 +1,5 @@
 import numpy as np
-from pydantic import ValidationError as PydanticValidationError
+from pydantic import ValidationError
 
 from satellite.models import (
     ACSState,
@@ -13,7 +13,6 @@ from satellite.validation import (
     check_telemetry,
     validate_subsystem_diagnostics,
 )
-from validated import ValidationError
 
 # ANSI escape codes for styling console output
 RESET = "\033[0m"
@@ -34,17 +33,25 @@ def print_header(title: str):
 
 
 def print_validation_error(e: ValidationError):
-    if len(e.errors) > 1:
-        print(f"  {BOLD}{RED}❌ Total Violations: {len(e.errors)}{RESET}")
-        for idx, err in enumerate(e.errors, 1):
+    errors = e.errors()
+    if len(errors) > 1:
+        print(f"  {BOLD}{RED}❌ Total Violations: {len(errors)}{RESET}")
+        for idx, err in enumerate(errors, 1):
+            loc = " -> ".join(str(loc_part) for loc_part in err["loc"])
+            val = err.get("input", "<unknown>")
+            msg = err.get("msg", "")
             print(
-                f"    {BOLD}{RED}{idx}.{RESET} Parameter {BOLD}{YELLOW}'{err.parameter_name}'{RESET}: "
-                f"value={BOLD}{RED}{err.value!r}{RESET}, violation={YELLOW}{err.message}{RESET}"
+                f"    {BOLD}{RED}{idx}.{RESET} Parameter {BOLD}{YELLOW}'{loc}'{RESET}: "
+                f"value={BOLD}{RED}{val!r}{RESET}, violation={YELLOW}{msg}{RESET}"
             )
     else:
-        print(f"  • Parameter in error: {BOLD}{YELLOW}{e.parameter_name}{RESET}")
-        print(f"  • Value received:     {BOLD}{RED}{e.value!r}{RESET}")
-        print(f"  • Violation details:  {YELLOW}{e.message}{RESET}")
+        err = errors[0]
+        loc = " -> ".join(str(loc_part) for loc_part in err["loc"])
+        val = err.get("input", "<unknown>")
+        msg = err.get("msg", "")
+        print(f"  • Parameter in error: {BOLD}{YELLOW}{loc}{RESET}")
+        print(f"  • Value received:     {BOLD}{RED}{val!r}{RESET}")
+        print(f"  • Violation details:  {YELLOW}{msg}{RESET}")
 
 
 def run_scenario(title: str, telemetry: SatelliteTelemetry):
@@ -225,7 +232,7 @@ def main():
             comms=CommsState(ground_station_visible=True, signal_strength=-65.0),
         )
         run_scenario("Faulty ACS Reaction Wheel Speed Shape", faulty_acs_shape)
-    except PydanticValidationError as e:
+    except ValidationError as e:
         print(f"{BOLD}{RED}🔴 [FAIL] ACSState REJECTED at construction! Pydantic caught the shape violation:{RESET}")
         print(f"{YELLOW}{e}{RESET}")
 
@@ -247,7 +254,7 @@ def main():
             comms=CommsState(ground_station_visible=True, signal_strength=-65.0),
         )
         run_scenario("Faulty ACS Reaction Wheel Speed DType", faulty_acs_dtype)
-    except PydanticValidationError as e:
+    except ValidationError as e:
         print(f"{BOLD}{RED}🔴 [FAIL] ACSState REJECTED at construction! Pydantic caught the dtype violation:{RESET}")
         print(f"{YELLOW}{e}{RESET}")
 
@@ -323,7 +330,7 @@ def main():
             f"RESULT: {BOLD}{GREEN}🟢 [PASS] Slew task passes pre-commit checks! "
             f"Ready to upload to command queue.{RESET}"
         )
-    except PydanticValidationError as e:
+    except ValidationError as e:
         print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Slew task rejected at construction:\n{e}{RESET}")
 
     # 10b. Slew Task exceeding speed limit — fails at construction
@@ -338,7 +345,7 @@ def main():
             max_predicted_slew_speed=3.1,  # 3.1 deg/s > 2.0 limit!
             predicted_coverage=95.0,
         )
-    except PydanticValidationError as e:
+    except ValidationError as e:
         print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Slew task REJECTED at construction! Pydantic caught the violation:{RESET}")
         print(f"{YELLOW}{e}{RESET}")
 
@@ -354,7 +361,7 @@ def main():
             max_predicted_slew_speed=0.8,
             predicted_coverage=71.2,  # 71.2% < 80.0% min required!
         )
-    except PydanticValidationError as e:
+    except ValidationError as e:
         print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Slew task REJECTED at construction! Pydantic caught the violation:{RESET}")
         print(f"{YELLOW}{e}{RESET}")
 
@@ -372,7 +379,7 @@ def main():
             max_predicted_slew_speed=3.5,  # 3.5 deg/s > 2.0 limit!
             predicted_coverage=75.0,  # 75% < 80% min required!
         )
-    except PydanticValidationError as e:
+    except ValidationError as e:
         print(f"RESULT: {BOLD}{RED}🔴 [FAIL] Slew task REJECTED at construction! Multiple violations detected:{RESET}")
         print(f"{YELLOW}{e}{RESET}")
 
