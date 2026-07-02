@@ -1,13 +1,10 @@
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, GetCoreSchemaHandler
+from pydantic._internal._model_construction import ModelMetaclass
 from pydantic_core import CoreSchema, core_schema
 
 from validated.validators.exceptions import ValidatorCheckError
-
-
-class ValidatorBaseModel(BaseModel):
-    model_config = ConfigDict(validate_assignment=True)
 
 
 class Validator:
@@ -97,3 +94,31 @@ else:
         """
 
         pass
+
+
+class _ValidatorBaseModelMeta(ModelMetaclass):
+    def __new__(mcs, name: str, bases: tuple[type[Any], ...], namespace: dict[str, Any], **kwargs: Any) -> type:
+        from typing import get_args, get_origin
+
+        import numpy as np
+
+        from validated.validators.numpy import DType
+
+        annotations = namespace.get("__annotations__", {})
+        for k, v in annotations.items():
+            origin = get_origin(v)
+            if origin is np.ndarray:
+                args = get_args(v)
+                if len(args) == 2:
+                    dtype_arg = args[1]
+                    if get_origin(dtype_arg) is np.dtype:
+                        target_dtype = get_args(dtype_arg)[0]
+                    else:
+                        target_dtype = dtype_arg
+                    annotations[k] = Validated[np.ndarray, DType(target_dtype)]
+
+        return super().__new__(mcs, name, bases, namespace, **kwargs)
+
+
+class ValidatorBaseModel(BaseModel, metaclass=_ValidatorBaseModelMeta):
+    model_config = ConfigDict(validate_assignment=True)
