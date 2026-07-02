@@ -314,3 +314,165 @@ def test_check_exception_chaining():
     errors = excinfo.value.errors()
     assert errors[0]["loc"] == (0,)
     assert "AttributeError" in errors[0]["msg"]
+
+
+def test_validator_reprs():
+    import re
+
+    import numpy as np
+
+    from validated.validators.numpy import DType, Shape
+    from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
+    from validated.validators.sequences import Contains, Length, NonEmpty, Sorted, Unique
+    from validated.validators.strings import (
+        ContainsSubstring,
+        EndsWith,
+        IsLowerCase,
+        IsUpperCase,
+        MatchesPattern,
+        StartsWith,
+    )
+
+    assert repr(MatchesPattern(r"\d+")) == "MatchesPattern(pattern='\\\\d+')"
+    assert repr(StartsWith("foo")) == "StartsWith(prefix='foo')"
+    assert repr(EndsWith("bar")) == "EndsWith(suffix='bar')"
+    assert repr(ContainsSubstring("sub")) == "ContainsSubstring(substring='sub')"
+    assert repr(IsLowerCase()) == "IsLowerCase()"
+    assert repr(IsUpperCase()) == "IsUpperCase()"
+
+    assert repr(Length(1, 10)) == "Length(min_len=1, max_len=10)"
+    assert repr(NonEmpty()) == "NonEmpty()"
+    assert repr(Contains("item")) == "Contains(item='item')"
+    assert repr(Unique()) == "Unique()"
+    assert repr(Sorted(reverse=True)) == "Sorted(reverse=True)"
+
+    assert repr(PathExists()) == "PathExists()"
+    assert repr(IsFile()) == "IsFile()"
+    assert repr(IsDirectory()) == "IsDirectory()"
+    assert repr(HasExtension(".txt")) == "HasExtension(extensions=('.txt',))"
+
+    assert repr(Shape(1, 2)) == "Shape(dims=(1, 2))"
+    assert repr(DType(np.float64)) == "DType(dtype=dtype('float64'))"
+
+
+def test_missing_equality():
+    from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
+    from validated.validators.sequences import Contains, NonEmpty, Sorted, Unique
+    from validated.validators.strings import ContainsSubstring, EndsWith, IsLowerCase, IsUpperCase, StartsWith
+
+    assert StartsWith("foo") == StartsWith("foo")
+    assert StartsWith("foo") != StartsWith("bar")
+
+    assert EndsWith("bar") == EndsWith("bar")
+    assert EndsWith("bar") != EndsWith("foo")
+
+    assert ContainsSubstring("sub") == ContainsSubstring("sub")
+    assert ContainsSubstring("sub") != ContainsSubstring("bus")
+
+    assert IsLowerCase() == IsLowerCase()
+    assert IsLowerCase() != IsUpperCase()
+
+    assert IsUpperCase() == IsUpperCase()
+    assert IsUpperCase() != IsLowerCase()
+
+    assert NonEmpty() == NonEmpty()
+    assert Contains("item") == Contains("item")
+    assert Contains("item") != Contains("other")
+    assert Unique() == Unique()
+    assert Unique() != NonEmpty()
+
+    assert Sorted() == Sorted()
+    assert Sorted(reverse=True) == Sorted(reverse=True)
+    assert Sorted() != Sorted(reverse=True)
+
+    assert PathExists() == PathExists()
+    assert IsFile() == IsFile()
+    assert IsDirectory() == IsDirectory()
+    assert HasExtension(".txt") == HasExtension(".txt")
+    assert HasExtension(".txt") != HasExtension(".csv")
+
+
+def test_string_compiled_regex():
+    import re
+
+    from validated.validators.strings import MatchesPattern
+
+    compiled = re.compile(r"\d+")
+    validator = MatchesPattern(compiled)
+    assert validator.validate("123")
+    assert not validator.validate("abc")
+
+
+def test_sorted_empty_sequence():
+    from validated.validators.sequences import Sorted
+
+    assert Sorted().validate([])
+
+
+def test_numpy_shape_list_and_str():
+    import numpy as np
+
+    from validated.validators.numpy import Shape
+
+    # passing list
+    validator = Shape([2, 3])
+    assert validator.validate(np.zeros((2, 3)))
+
+    # passing string digit
+    validator2 = Shape("2", 3)
+    assert validator2.validate(np.zeros((2, 3)))
+    assert not validator2.validate(np.zeros((3, 3)))
+
+
+def test_path_string_inputs():
+    import os
+
+    from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
+
+    assert not PathExists().validate("/does/not/exist/ever")
+    assert not IsFile().validate("/does/not/exist/ever.txt")
+    assert not IsDirectory().validate("/does/not/exist/ever")
+    assert HasExtension(".txt").validate("/some/path/file.txt")
+
+
+def test_multi_validator_flatten_and_validate():
+    from validated.validators.base import MultiValidator
+    from validated.validators.comparisons import GreaterThan, LessThan
+
+    v1 = GreaterThan(0)
+    v2 = LessThan(10)
+    m1 = MultiValidator([v1, v2])
+
+    v3 = GreaterThan(2)
+    m2 = MultiValidator([m1, v3])  # nested
+
+    assert len(m2.validators) == 3
+    assert m2.validate(5)
+    assert not m2.validate(15)
+
+
+def test_validator_check_error_propagation():
+    from pydantic_core import core_schema
+
+    from validated.validators.base import Validator
+    from validated.validators.exceptions import ValidatorCheckError
+
+    class FailingValidator(Validator):
+        def validate(self, value):
+            raise ValidatorCheckError("Custom error message", ValueError("inner"))
+
+    schema = FailingValidator().__get_pydantic_core_schema__(str, lambda x: core_schema.str_schema())
+    # we can test it implicitly using BaseModel
+    from typing import Annotated
+
+    from pydantic import BaseModel
+
+    class TestModel(BaseModel):
+        val: Annotated[str, FailingValidator()]
+
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc:
+        TestModel(val="test")
+    assert "Custom error message" in str(exc.value)
