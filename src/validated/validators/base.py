@@ -35,7 +35,13 @@ class MultiValidator(Validator):
     """Internal validator used to group multiple validators for Pydantic core schema."""
 
     def __init__(self, validators: list[Validator]):
-        self.validators = validators
+        flat_validators = []
+        for v in validators:
+            if isinstance(v, MultiValidator):
+                flat_validators.extend(v.validators)
+            else:
+                flat_validators.append(v)
+        self.validators = flat_validators
 
     def validate(self, value: Any) -> bool:
         return all(v.validate(value) for v in self.validators)
@@ -98,24 +104,11 @@ else:
 
 class _ValidatorBaseModelMeta(ModelMetaclass):
     def __new__(mcs, name: str, bases: tuple[type[Any], ...], namespace: dict[str, Any], **kwargs: Any) -> type:
-        from typing import get_args, get_origin
-
-        import numpy as np
-
-        from validated.validators.numpy import DType
+        from validated.validators.numpy import resolve_ndarray_annotation
 
         annotations = namespace.get("__annotations__", {})
         for k, v in annotations.items():
-            origin = get_origin(v)
-            if origin is np.ndarray:
-                args = get_args(v)
-                if len(args) == 2:
-                    dtype_arg = args[1]
-                    if get_origin(dtype_arg) is np.dtype:
-                        target_dtype = get_args(dtype_arg)[0]
-                    else:
-                        target_dtype = dtype_arg
-                    annotations[k] = Validated[np.ndarray, DType(target_dtype)]
+            annotations[k] = resolve_ndarray_annotation(v)
 
         return super().__new__(mcs, name, bases, namespace, **kwargs)
 

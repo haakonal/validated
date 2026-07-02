@@ -62,3 +62,47 @@ class DType(Validator):
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, DType) and self.expected_dtype == other.expected_dtype
+
+
+def resolve_ndarray_annotation(annotation: Any) -> Any:
+    """
+    Recursively resolves numpy.typing.NDArray into Validated[np.ndarray, DType(...)].
+    This enables seamless integration of NDArray[...] with Pydantic and Validated[...].
+    """
+    from typing import get_args, get_origin
+
+    try:
+        from typing import Annotated
+    except ImportError:
+        from typing_extensions import Annotated
+
+    from validated.validators.base import Validated
+
+    origin = get_origin(annotation)
+
+    # Base case: NDArray[dtype] -> Validated[np.ndarray, DType(dtype)]
+    if origin is np.ndarray:
+        args = get_args(annotation)
+        if len(args) == 2:
+            dtype_arg = args[1]
+            if get_origin(dtype_arg) is np.dtype:
+                target_dtype = get_args(dtype_arg)[0]
+            else:
+                target_dtype = dtype_arg
+            return Validated[np.ndarray, DType(target_dtype)]
+
+    # Recursive case: Annotated[inner, ...]
+    if origin is Annotated or hasattr(annotation, "__metadata__"):
+        args = get_args(annotation)
+        if not args:
+            return annotation
+        base_type = args[0]
+        metadata = args[1:]
+
+        resolved_base = resolve_ndarray_annotation(base_type)
+        if resolved_base is not base_type:
+            # Re-wrap the resolved base with the original metadata
+            res_args = get_args(resolved_base)
+            return Validated[(res_args[0], *res_args[1:], *metadata)]
+
+    return annotation
