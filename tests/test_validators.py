@@ -317,7 +317,6 @@ def test_check_exception_chaining():
 
 
 def test_validator_reprs():
-    import re
 
     import numpy as np
 
@@ -425,7 +424,6 @@ def test_numpy_shape_list_and_str():
 
 
 def test_path_string_inputs():
-    import os
 
     from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
 
@@ -461,7 +459,7 @@ def test_validator_check_error_propagation():
         def validate(self, value):
             raise ValidatorCheckError("Custom error message", ValueError("inner"))
 
-    schema = FailingValidator().__get_pydantic_core_schema__(str, lambda x: core_schema.str_schema())
+    FailingValidator().__get_pydantic_core_schema__(str, lambda x: core_schema.str_schema())
     # we can test it implicitly using BaseModel
     from typing import Annotated
 
