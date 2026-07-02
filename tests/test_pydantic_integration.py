@@ -212,4 +212,4 @@ def test_multi_validator_check_error():
     with pytest.raises(PydanticValidationError) as excinfo:
         CheckErrorConfig(value=5)
     err_str = str(excinfo.value)
-    assert "must satisfy custom check: division by zero" in err_str
+    assert "Predicate 'division by zero' raised ZeroDivisionError" in err_str
