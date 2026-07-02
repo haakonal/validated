@@ -1,6 +1,6 @@
 # Database Design: Polymorphic Document Table vs. Schema-Strict Tables
 
-> **This is the authoritative design reference** for integrating the `validated` library with a relational database. The SQL schemas, Python modules (`rules.py`, `main.py`), and architectural patterns shown here are illustrative examples — they are not shipped as part of this package. See the [README](README.md) for the library API and satellite validation examples.
+> **This is the authoritative design reference** for integrating the `validated` library with a relational database. The SQL schemas, Python modules (`rules.py`, `main.py`), and architectural patterns shown here are illustrative examples — they are not shipped as part of this package. See the [Home](index.md) for the library API and satellite validation examples.
 
 When designing a database schema to store operational constraints (flight rules) for satellite subsystems, we face a classic architectural choice:
 
