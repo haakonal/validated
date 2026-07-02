@@ -10,7 +10,7 @@ from validated import (
 from validated.validators.numpy import DType, Shape
 
 
-def test_ndarray_type_alias():
+def test_ndarray_type_alias() -> None:
     @validated
     def process(arr: Validated[NDArray[np.float64], DType(np.float64)]):
         return arr
@@ -25,7 +25,7 @@ def test_ndarray_type_alias():
     assert "array dtype int32 does not match expected dtype float64" in err_str
 
 
-def test_ndarray_string_dtype():
+def test_ndarray_string_dtype() -> None:
     @validated
     def process(arr: Validated[NDArray[np.float32], DType(np.float32)]):
         return arr
@@ -40,7 +40,7 @@ def test_ndarray_string_dtype():
     assert "array dtype int32 does not match expected dtype float32" in err_str
 
 
-def test_numpy_coverage():
+def test_numpy_coverage() -> None:
     s = Shape(3)
     assert not s.validate("not an array")
     assert s.error_message("not an array") == "value is not a NumPy array"

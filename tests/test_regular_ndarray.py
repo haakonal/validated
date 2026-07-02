@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from validated.validators.base import ValidatorBaseModel
 
 
-def test_regular_ndarray():
+def test_regular_ndarray() -> None:
     class MyModel(ValidatorBaseModel):
         arr: np.ndarray
 
@@ -13,4 +13,4 @@ def test_regular_ndarray():
     assert isinstance(m.arr, np.ndarray)
 
     with pytest.raises(ValidationError):
-        MyModel(arr=[1, 2])
+        MyModel(arr=[1, 2])  # type: ignore

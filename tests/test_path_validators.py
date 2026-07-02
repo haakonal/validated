@@ -76,22 +76,22 @@ def test_is_directory(temp_fs):
         check_dir(temp_fs["missing"])
 
 
-def test_has_extension():
+def test_has_extension() -> None:
     @validated
     def check_ext(path: Validated[Path, HasExtension(".csv", "txt")]):
         return path
 
     # Should pass regardless of existence
-    assert check_ext("data.csv") == Path("data.csv")
+    assert check_ext("data.csv") == Path("data.csv")  # type: ignore
     assert check_ext(Path("file.txt")) == Path("file.txt")
 
     with pytest.raises(ValidationError) as excinfo:
-        check_ext("image.png")
+        check_ext("image.png")  # type: ignore
     errors = excinfo.value.errors()
     assert ".png not in" in errors[0]["msg"]
 
 
-def test_paths_coverage():
+def test_paths_coverage() -> None:
     validators = [PathExists(), IsFile(), IsDirectory(), HasExtension(".txt")]
     for v in validators:
         assert not v.validate(123)

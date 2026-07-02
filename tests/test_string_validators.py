@@ -13,7 +13,7 @@ from validated import (
 from validated.validators.strings import MatchesPattern
 
 
-def test_starts_with():
+def test_starts_with() -> None:
     @validated
     def process(text: Validated[str, StartsWith("hello")]):
         return text
@@ -25,7 +25,7 @@ def test_starts_with():
     assert "must start with 'hello'" in excinfo.value.errors()[0]["msg"]
 
 
-def test_ends_with():
+def test_ends_with() -> None:
     @validated
     def process(text: Validated[str, EndsWith("world")]):
         return text
@@ -37,7 +37,7 @@ def test_ends_with():
     assert "must end with 'world'" in excinfo.value.errors()[0]["msg"]
 
 
-def test_contains_substring():
+def test_contains_substring() -> None:
     @validated
     def process(text: Validated[str, ContainsSubstring("foo")]):
         return text
@@ -49,7 +49,7 @@ def test_contains_substring():
     assert "must contain substring 'foo'" in excinfo.value.errors()[0]["msg"]
 
 
-def test_case_validators():
+def test_case_validators() -> None:
     @validated
     def process_lower(text: Validated[str, IsLowerCase()]):
         return text
@@ -70,7 +70,7 @@ def test_case_validators():
     assert "must be uppercase" in excinfo.value.errors()[0]["msg"]
 
 
-def test_strings_coverage():
+def test_strings_coverage() -> None:
     validators = [
         MatchesPattern("a"),
         StartsWith("a"),

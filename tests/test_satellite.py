@@ -18,7 +18,7 @@ from satellite.validation import (
 )
 
 
-def test_valid_charging_mode():
+def test_valid_charging_mode() -> None:
     telemetry = SatelliteTelemetry(
         mode="charging",
         battery=BatteryState(charge_level=80.0, status="charging", temperature=20.0, current_draw=10.0),
@@ -36,7 +36,7 @@ def test_valid_charging_mode():
     assert check_telemetry(telemetry) is True
 
 
-def test_charging_mode_violations():
+def test_charging_mode_violations() -> None:
     # 1. Panels folded
     telemetry = SatelliteTelemetry(
         mode="charging",
@@ -91,7 +91,7 @@ def test_charging_mode_violations():
     assert excinfo.value.errors()[0]["loc"] == ("sun_pointing_deviation",)
 
 
-def test_valid_data_collection_mode():
+def test_valid_data_collection_mode() -> None:
     telemetry = SatelliteTelemetry(
         mode="data_collection",
         battery=BatteryState(charge_level=90.0, status="discharging", temperature=15.0, current_draw=80.0),
@@ -109,7 +109,7 @@ def test_valid_data_collection_mode():
     assert check_telemetry(telemetry) is True
 
 
-def test_data_collection_mode_violations():
+def test_data_collection_mode_violations() -> None:
     # 1. Temperature too high (> 40.0)
     telemetry = SatelliteTelemetry(
         mode="data_collection",
@@ -151,7 +151,7 @@ def test_data_collection_mode_violations():
     assert excinfo.value.errors()[0]["loc"] == ("target_pointing_deviation",)
 
 
-def test_acs_numpy_constraints():
+def test_acs_numpy_constraints() -> None:
     # Shape mismatch (4 dimensions instead of 3)
     with pytest.raises(ValidationError) as excinfo:
         ACSState(
@@ -171,10 +171,10 @@ def test_acs_numpy_constraints():
     assert "does not match expected dtype" in str(excinfo.value)
 
 
-def test_selective_validation():
+def test_selective_validation() -> None:
     # 1. Valid inputs (with coercion)
     # "ACS-101" is matched to pattern; "25" is coerced to float; raw_telemetry is Any
-    assert validate_subsystem_diagnostics("ACS-101", "25", {"some": "data"}) is True
+    assert validate_subsystem_diagnostics("ACS-101", "25", {"some": "data"}) is True  # type: ignore
 
     # 2. Invalid inputs on full validation parameter (pattern mismatch)
     with pytest.raises(ValidationError) as excinfo:
@@ -185,7 +185,7 @@ def test_selective_validation():
 
     # 3. Invalid inputs on type-only validation parameter (not coercible to float)
     with pytest.raises(ValidationError) as excinfo:
-        validate_subsystem_diagnostics("ACS-101", "not-a-float", "ignored")
+        validate_subsystem_diagnostics("ACS-101", "not-a-float", "ignored")  # type: ignore
     err = excinfo.value.errors()[0]
     assert err["loc"] == (1,)
     assert "valid number" in err["msg"]
@@ -195,7 +195,7 @@ def test_selective_validation():
     assert validate_subsystem_diagnostics("ACS-101", 25.0, 12345) is True
 
 
-def test_task_validation():
+def test_task_validation() -> None:
     # 1. Valid Slew Task — construction succeeds (validation passes)
     valid_slew = SlewTask(
         poi_name="Paris_Observation",

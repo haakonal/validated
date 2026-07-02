@@ -31,10 +31,11 @@ class Validator:
 
 
 class MultiValidator(Validator):
+    validators: list[Validator]
     """Internal validator used to group multiple validators for Pydantic core schema."""
 
     def __init__(self, validators: list[Validator]):
-        flat_validators = []
+        flat_validators: list[Validator] = []
         for v in validators:
             if isinstance(v, MultiValidator):
                 flat_validators.extend(v.validators)

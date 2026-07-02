@@ -17,18 +17,18 @@ from validated import (
 
 
 # 1. Test basic coercion and validation
-def test_coercion_and_basic_validation():
+def test_coercion_and_basic_validation() -> None:
     @validated
     def add_ints(a: int, b: int) -> int:
         return a + b
 
     # Valid values & coercion
     assert add_ints(5, 10) == 15
-    assert add_ints("5", "10") == 15  # Coerced by Pydantic
+    assert add_ints("5", "10") == 15  # type: ignore
 
     # Invalid values
     with pytest.raises(ValidationError) as excinfo:
-        add_ints("invalid", 10)
+        add_ints("invalid", 10)  # type: ignore
     errors = excinfo.value.errors()
     assert errors[0]["loc"] == (0,)
     assert errors[0]["input"] == "invalid"
@@ -36,7 +36,7 @@ def test_coercion_and_basic_validation():
 
 
 # 2. Test numeric validators
-def test_numeric_validators():
+def test_numeric_validators() -> None:
     @validated
     def process_numbers(
         pos: Validated[int, GreaterThan(0)],
@@ -78,7 +78,7 @@ def test_numeric_validators():
 
 
 # 3. Test string and collection validators
-def test_string_and_collection_validators():
+def test_string_and_collection_validators() -> None:
     @validated
     def process_strings(
         username: Validated[str, Length(min_len=3, max_len=10)],
@@ -114,7 +114,7 @@ def test_string_and_collection_validators():
 
 
 # 4. Test custom validator Check
-def test_custom_check():
+def test_custom_check() -> None:
     @validated
     def process_even(x: Validated[int, Check(lambda v: v % 2 == 0, "must be even")]):
         return x
@@ -129,7 +129,7 @@ def test_custom_check():
 
 
 # 5. Test NumPy shape and dtype validators
-def test_numpy_validators():
+def test_numpy_validators() -> None:
     @validated
     def process_array(
         arr: Validated[np.ndarray, Shape(None, 3), DType(np.float32)],
@@ -181,7 +181,7 @@ def test_numpy_validators():
 
 
 # 6. Test return value validators
-def test_return_value_validators():
+def test_return_value_validators() -> None:
     @validated
     def get_positive(x: int) -> Validated[int, GreaterThan(0)]:
         return x
@@ -197,7 +197,7 @@ def test_return_value_validators():
 
 
 # 7. Test var-positional and var-keyword arguments
-def test_var_args_and_kwargs():
+def test_var_args_and_kwargs() -> None:
     @validated
     def process_many(
         *items: Validated[int, GreaterThan(0)],
@@ -212,7 +212,7 @@ def test_var_args_and_kwargs():
     )
 
     # Coerced
-    assert process_many("1", "2", alpha="0.5") == ((1, 2), {"alpha": 0.5})
+    assert process_many("1", "2", alpha="0.5") == ((1, 2), {"alpha": 0.5})  # type: ignore
 
     # Positional arg violation
     with pytest.raises(ValidationError) as excinfo:
@@ -230,7 +230,7 @@ def test_var_args_and_kwargs():
 
 
 # 8. Test MatchesPattern uses fullmatch (not partial match)
-def test_matches_pattern_fullmatch():
+def test_matches_pattern_fullmatch() -> None:
     @validated
     def process(code: Validated[str, MatchesPattern(r"\d{3}")]):
         return code
@@ -253,7 +253,7 @@ def test_matches_pattern_fullmatch():
 
 
 # 9. Test __repr__ on all validator classes
-def test_validator_repr():
+def test_validator_repr() -> None:
     assert repr(GreaterThan(5)) == "GreaterThan(threshold=5)"
     assert repr(LessThan(2.0)) == "LessThan(threshold=2.0)"
     assert repr(InRange(0, 100)) == "InRange(min_val=0, max_val=100)"
@@ -265,7 +265,7 @@ def test_validator_repr():
 
 
 # 10. Test __eq__ on all validator classes
-def test_validator_equality():
+def test_validator_equality() -> None:
     assert GreaterThan(5) == GreaterThan(5)
     assert GreaterThan(5) != GreaterThan(10)
     assert GreaterThan(5) != LessThan(5)
@@ -298,7 +298,7 @@ def test_validator_equality():
 
 
 # 11. Test Check exception chained context
-def test_check_exception_chaining():
+def test_check_exception_chaining() -> None:
     """When a Check predicate raises an exception, Pydantic wraps it as a ValueError."""
 
     def buggy_predicate(value):
@@ -316,7 +316,7 @@ def test_check_exception_chaining():
     assert "AttributeError" in errors[0]["msg"]
 
 
-def test_validator_reprs():
+def test_validator_reprs() -> None:
 
     import numpy as np
 
@@ -354,7 +354,7 @@ def test_validator_reprs():
     assert repr(DType(np.float64)) == "DType(dtype=dtype('float64'))"
 
 
-def test_missing_equality():
+def test_missing_equality() -> None:
     from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
     from validated.validators.sequences import Contains, NonEmpty, Sorted, Unique
     from validated.validators.strings import ContainsSubstring, EndsWith, IsLowerCase, IsUpperCase, StartsWith
@@ -391,7 +391,7 @@ def test_missing_equality():
     assert HasExtension(".txt") != HasExtension(".csv")
 
 
-def test_string_compiled_regex():
+def test_string_compiled_regex() -> None:
     import re
 
     from validated.validators.strings import MatchesPattern
@@ -402,13 +402,13 @@ def test_string_compiled_regex():
     assert not validator.validate("abc")
 
 
-def test_sorted_empty_sequence():
+def test_sorted_empty_sequence() -> None:
     from validated.validators.sequences import Sorted
 
     assert Sorted().validate([])
 
 
-def test_numpy_shape_list_and_str():
+def test_numpy_shape_list_and_str() -> None:
     import numpy as np
 
     from validated.validators.numpy import Shape
@@ -423,7 +423,7 @@ def test_numpy_shape_list_and_str():
     assert not validator2.validate(np.zeros((3, 3)))
 
 
-def test_path_string_inputs():
+def test_path_string_inputs() -> None:
 
     from validated.validators.paths import HasExtension, IsDirectory, IsFile, PathExists
 
@@ -433,7 +433,7 @@ def test_path_string_inputs():
     assert HasExtension(".txt").validate("/some/path/file.txt")
 
 
-def test_multi_validator_flatten_and_validate():
+def test_multi_validator_flatten_and_validate() -> None:
     from validated.validators.base import MultiValidator
     from validated.validators.comparisons import GreaterThan, LessThan
 
@@ -449,7 +449,7 @@ def test_multi_validator_flatten_and_validate():
     assert not m2.validate(15)
 
 
-def test_validator_check_error_propagation():
+def test_validator_check_error_propagation() -> None:
     from pydantic_core import core_schema
 
     from validated.validators.base import Validator
@@ -459,7 +459,7 @@ def test_validator_check_error_propagation():
         def validate(self, value):
             raise ValidatorCheckError("Custom error message", ValueError("inner"))
 
-    FailingValidator().__get_pydantic_core_schema__(str, lambda x: core_schema.str_schema())
+    FailingValidator().__get_pydantic_core_schema__(str, lambda x: core_schema.str_schema())  # type: ignore
     # we can test it implicitly using BaseModel
     from typing import Annotated
 

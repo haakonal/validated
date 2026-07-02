@@ -10,7 +10,7 @@ from validated import (
 )
 
 
-def test_single_parameter_failure_compatibility():
+def test_single_parameter_failure_compatibility() -> None:
     @validated
     def func(a: Validated[int, GreaterThan(0)]):
         return a
@@ -25,7 +25,7 @@ def test_single_parameter_failure_compatibility():
     assert "must be greater than 0" in errors[0]["msg"]
 
 
-def test_multiple_parameter_failures():
+def test_multiple_parameter_failures() -> None:
     @validated
     def func(
         a: Validated[int, GreaterThan(0)],
@@ -54,7 +54,7 @@ def test_multiple_parameter_failures():
     assert "must be in range [0.0, 100.0]" in errs[2]["msg"]
 
 
-def test_multiple_var_positional_failures():
+def test_multiple_var_positional_failures() -> None:
     @validated
     def func(*items: Validated[int, GreaterThan(0)]):
         return items
@@ -74,7 +74,7 @@ def test_multiple_var_positional_failures():
     assert "must be greater than 0" in errs[1]["msg"]
 
 
-def test_multiple_var_keyword_failures():
+def test_multiple_var_keyword_failures() -> None:
     @validated
     def func(**options: Validated[float, InRange(0.0, 1.0)]):
         return options
@@ -96,7 +96,7 @@ def test_multiple_var_keyword_failures():
     assert 1.5 in values
 
 
-def test_mixed_parameter_failures():
+def test_mixed_parameter_failures() -> None:
     @validated
     def func(
         x: Validated[int, GreaterThan(10)],

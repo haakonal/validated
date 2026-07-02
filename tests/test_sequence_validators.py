@@ -11,7 +11,7 @@ from validated import (
 )
 
 
-def test_non_empty():
+def test_non_empty() -> None:
     @validated
     def process(items: Validated[list[int], NonEmpty()]):
         return items
@@ -23,7 +23,7 @@ def test_non_empty():
     assert "must not be empty" in excinfo.value.errors()[0]["msg"]
 
 
-def test_contains():
+def test_contains() -> None:
     @validated
     def process(items: Validated[list[int], Contains(5)]):
         return items
@@ -35,7 +35,7 @@ def test_contains():
     assert "must contain 5" in excinfo.value.errors()[0]["msg"]
 
 
-def test_unique():
+def test_unique() -> None:
     @validated
     def process(items: Validated[list[int], Unique()]):
         return items
@@ -47,7 +47,7 @@ def test_unique():
     assert "all elements must be unique" in excinfo.value.errors()[0]["msg"]
 
 
-def test_sorted():
+def test_sorted() -> None:
     @validated
     def process_asc(items: Validated[list[int], Sorted()]):
         return items
@@ -68,7 +68,7 @@ def test_sorted():
     assert "elements must be in descending order" in excinfo.value.errors()[0]["msg"]
 
 
-def test_sequences_coverage():
+def test_sequences_coverage() -> None:
     # Length TypeError
     from validated.validators.sequences import Length
 

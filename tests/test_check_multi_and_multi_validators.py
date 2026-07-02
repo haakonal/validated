@@ -17,7 +17,7 @@ from validated import (
 # ── Scenario 1: Check() with multi-parameter error collection ──────────
 
 
-def test_check_multi_param_returning_false():
+def test_check_multi_param_returning_false() -> None:
     """Two params both using Check() that returns False — errors should be collected."""
 
     @validated
@@ -41,7 +41,7 @@ def test_check_multi_param_returning_false():
     assert "must be even" in errs[1]["msg"]
 
 
-def test_check_multi_param_raising_exception():
+def test_check_multi_param_raising_exception() -> None:
     """Two params both using Check() where the predicate raises — errors should be collected."""
 
     def needs_len(v):
@@ -67,7 +67,7 @@ def test_check_multi_param_raising_exception():
     assert "TypeError" in errs[1]["msg"]
 
 
-def test_check_mixed_with_builtin_validators_multi_param():
+def test_check_mixed_with_builtin_validators_multi_param() -> None:
     """Mix of Check() and built-in validators across params, all failing."""
 
     @validated
@@ -97,7 +97,7 @@ def test_check_mixed_with_builtin_validators_multi_param():
 # ── Scenario 2: Multiple validators in one Validated[] ─────────────────
 
 
-def test_multiple_validators_single_param_first_fails():
+def test_multiple_validators_single_param_first_fails() -> None:
     """Validated with two validators; the first one fails."""
 
     @validated
@@ -112,7 +112,7 @@ def test_multiple_validators_single_param_first_fails():
     assert "must be greater than 0" in errs[0]["msg"]
 
 
-def test_multiple_validators_single_param_second_fails():
+def test_multiple_validators_single_param_second_fails() -> None:
     """Validated with two validators; value passes first, fails second."""
 
     @validated
@@ -127,7 +127,7 @@ def test_multiple_validators_single_param_second_fails():
     assert "must be less than 100" in errs[0]["msg"]
 
 
-def test_multiple_validators_single_param_both_pass():
+def test_multiple_validators_single_param_both_pass() -> None:
     """Validated with two validators; value satisfies both."""
 
     @validated
@@ -137,7 +137,7 @@ def test_multiple_validators_single_param_both_pass():
     assert func(50) == 50
 
 
-def test_multiple_validators_single_param_both_fail():
+def test_multiple_validators_single_param_both_fail() -> None:
     """Validated with two validators; value fails both and both errors are reported."""
 
     @validated
@@ -156,7 +156,7 @@ def test_multiple_validators_single_param_both_fail():
     assert "must be less than 5" in msg
 
 
-def test_multiple_validators_with_check_in_validated():
+def test_multiple_validators_with_check_in_validated() -> None:
     """Mix of built-in and Check() validators on one parameter."""
 
     @validated
@@ -179,7 +179,7 @@ def test_multiple_validators_with_check_in_validated():
     assert "must be even" in excinfo.value.errors()[0]["msg"]
 
 
-def test_multiple_validators_multi_param_error_collection():
+def test_multiple_validators_multi_param_error_collection() -> None:
     """Two params each with multiple validators — errors collected across params."""
 
     @validated
@@ -203,7 +203,7 @@ def test_multiple_validators_multi_param_error_collection():
     assert "must be greater than 10" in errs[1]["msg"]
 
 
-def test_check_in_var_positional_multi_errors():
+def test_check_in_var_positional_multi_errors() -> None:
     """Check() validator on *args with multiple failures."""
 
     @validated
@@ -223,7 +223,7 @@ def test_check_in_var_positional_multi_errors():
     assert errs[1]["input"] == -4
 
 
-def test_check_in_var_keyword_multi_errors():
+def test_check_in_var_keyword_multi_errors() -> None:
     """Check() validator on **kwargs with multiple failures."""
 
     @validated

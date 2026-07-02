@@ -7,7 +7,7 @@ from validated.validators.base import Validated, ValidatorBaseModel
 from validated.validators.numpy import DType, Shape
 
 
-def test_ndarray_in_model():
+def test_ndarray_in_model() -> None:
     class MyModel(ValidatorBaseModel):
         arr: NDArray[np.float64]
 
@@ -21,7 +21,7 @@ def test_ndarray_in_model():
     assert np.array_equal(m2.arr, np.array([1, 2], dtype=np.int32))
 
 
-def test_comprehensive_ndarray_combinations():
+def test_comprehensive_ndarray_combinations() -> None:
     class MyModel(ValidatorBaseModel):
         # 1. Native numpy array (arbitrary types allowed)
         arr1: np.ndarray
