@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release (e.g., v0.1.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -15,6 +21,32 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify release is from main branch
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.ref_name }}" != "main" ]; then
+              echo "Error: Manual releases must be triggered from the main branch."
+              exit 1
+            fi
+          else
+            # For tag pushes, verify the tag's commit is reachable from origin/main
+            if ! git branch -r --contains ${{ github.sha }} | grep -E -q "origin/main$"; then
+              echo "Error: Tag must be on the main branch."
+              exit 1
+            fi
+          fi
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -29,28 +61,24 @@ jobs:
 
       - name: Create GitHub Release and upload assets
         run: |
-          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+          TAG="${{ steps.version.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release already exists."
-            is_draft=$(gh release view "${{ github.ref_name }}" --json isDraft -q .isDraft)
+            is_draft=$(gh release view "$TAG" --json isDraft -q .isDraft)
             if [ "$is_draft" = "true" ]; then
-              echo "Release is a draft. Uploading assets..."
-              gh release upload "${{ github.ref_name }}" dist/* --clobber
+              echo "Release is a draft. Uploading assets and publishing..."
+              gh release upload "$TAG" dist/* --clobber
+              gh release edit "$TAG" --draft=false
             else
               echo "Error: Release is already published and immutable."
-              echo "To trigger release artifact uploads automatically in an immutable repository:"
-              echo "1. Push the tag via git CLI: git tag <version> && git push origin <version>"
-              echo "2. Or save the release as a 'Draft' in the GitHub UI, which allows the pipeline to upload assets before publishing."
               exit 1
             fi
           else
-            echo "Release does not exist. Creating draft release and uploading assets..."
-            gh release create "${{ github.ref_name }}" dist/* \
-              --title "${{ github.ref_name }}" \
+            echo "Release does not exist. Creating and publishing release..."
+            gh release create "$TAG" dist/* \
+              --title "$TAG" \
               --generate-notes \
-              --draft
+              --target "${{ github.sha }}"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
-
