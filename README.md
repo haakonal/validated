@@ -6,7 +6,7 @@
 
 **Validated** is a lightweight, incredibly fast data validation and type coercion library using Pydantic and NumPy under the hood. It allows you to attach extremely expressive, parameterized constraint rules directly to your function signatures using standard Python `typing.Annotated`.
 
-> 🚀 **Read the full documentation at: [https://haakonal.github.io/constraints/](https://haakonal.github.io/constraints/)**
+> 🚀 **Read the full documentation at: [https://haakonal.github.io/validated/](https://haakonal.github.io/validated/)**
 
 ## Installation
 
@@ -56,7 +56,7 @@ For a complete guide, including:
 - Database Architecture (Storing and hot-reloading rules from PostgreSQL)
 - The Satellite Demo Application
 
-Please visit our [Documentation Site](https://haakonal.github.io/constraints/).
+Please visit our [Documentation Site](https://haakonal.github.io/validated/).
 
 ## Testing
 
