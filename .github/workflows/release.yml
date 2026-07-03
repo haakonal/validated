@@ -30,14 +30,30 @@ jobs:
       - name: Create GitHub Release and upload assets
         run: |
           if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
-            echo "Release already exists. Uploading assets..."
-            gh release upload "${{ github.ref_name }}" dist/* --clobber
+            echo "Release already exists."
+            is_draft=$(gh release view "${{ github.ref_name }}" --json isDraft -q .isDraft)
+            if [ "$is_draft" = "true" ]; then
+              echo "Release is a draft. Uploading assets..."
+              gh release upload "${{ github.ref_name }}" dist/* --clobber
+              echo "Publishing release..."
+              gh release edit "${{ github.ref_name }}" --draft=false
+            else
+              echo "Error: Release is already published and immutable."
+              echo "To trigger release artifact uploads automatically in an immutable repository:"
+              echo "1. Push the tag via git CLI: git tag <version> && git push origin <version>"
+              echo "2. Or save the release as a 'Draft' in the GitHub UI, which allows the pipeline to upload assets before publishing."
+              exit 1
+            fi
           else
-            echo "Release does not exist. Creating release..."
+            echo "Release does not exist. Creating draft release and uploading assets..."
             gh release create "${{ github.ref_name }}" dist/* \
               --title "${{ github.ref_name }}" \
-              --generate-notes
+              --generate-notes \
+              --draft
+            echo "Publishing release..."
+            gh release edit "${{ github.ref_name }}" --draft=false
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
